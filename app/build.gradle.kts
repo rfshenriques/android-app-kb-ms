@@ -19,6 +19,16 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    flavorDimensions += "mode"
+    productFlavors {
+        // everything, including the mouse (Accessibility) service
+        create("full") { dimension = "mode" }
+        // keyboard only: no Accessibility service declared, so Play Protect does not block it
+        create("kbOnly") {
+            dimension = "mode"
+            applicationIdSuffix = ".kb"
+        }
+    }
     packaging {
         resources.excludes += setOf("META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/DEPENDENCIES")
     }
