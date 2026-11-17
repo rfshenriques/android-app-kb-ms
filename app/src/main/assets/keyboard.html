@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Keyboard">
+<meta name="theme-color" content="#111318">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>Remote Keyboard</title>
+<style>
+  :root {
+    --bg: #111318; --bar: #1a1d24; --key: #2c313c; --key-fn: #1f232b;
+    --key-down: #4b5365; --accent: #4c8dff; --text: #e8eaf0; --muted: #8a91a2;
+    --ok: #36c275; --warn: #f0b429; --bad: #ef5350;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 16px -apple-system, system-ui, sans-serif; overflow: hidden; overscroll-behavior: none; }
+  body { position: fixed; inset: 0; display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+  #bar { flex: none; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    background: var(--bar); font-size: 13px; color: var(--muted); }
+  #dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+  #dot.ok { background: var(--ok); } #dot.wait { background: var(--warn); }
+  #bar .sp { flex: 1; }
+  #bar button { background: none; border: 0; color: var(--accent); font-size: 13px; padding: 4px 6px; }
+
+  #main { flex: 1; min-height: 0; display: none; gap: 6px; padding: 6px; }
+  body.kb #main { display: flex; }
+  body.pos-left #main, body.pos-right #main { flex-direction: row; }
+  body.pos-above #main, body.pos-below #main { flex-direction: column; }
+  body.pos-left #pad, body.pos-above #pad { order: 0; }
+  body.pos-right #pad, body.pos-below #pad { order: 2; }
+  #kb { order: 1; flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 5px; touch-action: none; }
+  body.kbhide #kb { display: none; }
+
+  #pad { display: flex; flex-direction: column; gap: 5px; min-width: 0; min-height: 0; flex: 0 0 34%; }
+  body.pos-off #pad { display: none; }
+  body.kbhide #pad { flex: 1 1 0 !important; }
+  #padSurface { flex: 1; min-height: 0; border-radius: 10px; background: #181b22; border: 1px solid #2a2f3a;
+    display: flex; align-items: center; justify-content: center; color: #3a4150; font-size: 13px; touch-action: none; }
+  #padBtns { flex: none; height: 34%; max-height: 54px; min-height: 34px; display: flex; gap: 5px; }
+  .pbtn { flex: 1; display: flex; align-items: center; justify-content: center; border-radius: 8px;
+    background: var(--key-fn); color: #c6cad6; font-size: 13px; touch-action: none; box-shadow: 0 1px 0 rgba(0,0,0,.5); }
+  .pbtn.down { background: var(--key-down); }
+  /* above/below: short wide strip, so put the click buttons beside the surface */
+  body.pos-above #pad, body.pos-below #pad { flex-direction: row; }
+  body.pos-above #padBtns, body.pos-below #padBtns { flex-direction: column; height: auto; max-height: none; min-height: 0; flex: 0 0 24%; }
+  .row { flex: 1; display: flex; gap: 5px; min-height: 0; }
+  .key { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center;
+    background: var(--key); border-radius: 7px; font-size: clamp(14px, 3.6vh, 22px); font-weight: 500;
+    box-shadow: 0 1px 0 rgba(0,0,0,.5); touch-action: none; }
+  .key.fn { background: var(--key-fn); font-size: clamp(11px, 2.7vh, 16px); color: #c6cad6; }
+  .key.down { background: var(--key-down); }
+  .key.on { background: var(--accent); color: #fff; }
+
+  #pinScreen { flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; text-align: center; }
+  body.pin #pinScreen { display: flex; }
+  #pinScreen h1 { margin: 0; font-size: 20px; }
+  #pinScreen p { margin: 0; color: var(--muted); font-size: 14px; max-width: 420px; }
+  #pinInput { width: 180px; font-size: 28px; text-align: center; letter-spacing: 6px; padding: 8px;
+    border-radius: 10px; border: 1px solid #3a4150; background: var(--bar); color: var(--text);
+    -webkit-user-select: text; user-select: text; }
+  #pinGo { font-size: 18px; padding: 10px 28px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; }
+  #pinErr { color: var(--bad); min-height: 1.2em; font-size: 14px; }
+
+  #settings { position: fixed; inset: 0; z-index: 20; display: none; background: rgba(0,0,0,.6);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  #settings.open { display: flex; }
+  #panel { margin: auto; width: min(100%, 720px); max-height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    background: var(--bar); border-radius: 14px; padding: 12px 14px; }
+  #panel h2 { margin: 0 0 8px; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
+  #panel h2 button, #setDone { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 6px 16px; font-size: 14px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  .grp.wide { grid-column: 1 / -1; }
+  .grp label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .seg { display: flex; background: #11141a; border-radius: 8px; padding: 2px; }
+  .seg button { flex: 1; border: 0; background: none; color: var(--text); padding: 7px 4px; border-radius: 6px; font-size: 13px; }
+  .seg button.sel { background: var(--accent); color: #fff; }
+  .grp input[type=range] { width: 100%; }
+  @media (orientation: portrait) { .grid { grid-template-columns: 1fr; } }
+
+  #rotate { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: var(--muted); }
+  #rotate .ic { font-size: 48px; }
+  @media (orientation: portrait) { body.kb #rotate { display: flex; } }
+</style>
+</head>
+<body class="pin">
+  <div id="bar">
+    <span id="dot"></span><span id="state">Not connected</span>
+    <span class="sp"></span>
+    <button id="setBtn">Settings</button>
+    <button id="pinBtn">PIN</button>
+  </div>
+
+  <div id="pinScreen">
+    <h1>Connect to your tablet</h1>
+    <p>Enter the PIN shown on the tablet's keyboard bar or in the Remote Keyboard app.</p>
+    <input id="pinInput" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="PIN">
+    <button id="pinGo">Connect</button>
+    <div id="pinErr"></div>
+  </div>
+
+  <div id="main">
+    <div id="pad">
+      <div id="padSurface">trackpad</div>
+      <div id="padBtns"><div class="pbtn" id="lBtn">Left click</div><div class="pbtn" id="rBtn">Right click</div></div>
+    </div>
+    <div id="kb"></div>
+  </div>
+
+  <div id="settings">
+    <div id="panel">
+      <h2>Settings <button id="setDone">Done</button></h2>
+      <div class="grid">
+        <div class="grp wide"><label>Trackpad position</label>
+          <div class="seg" data-key="pad">
+            <button data-v="off">Off</button><button data-v="left">Left</button><button data-v="right">Right</button>
+            <button data-v="above">Above</button><button data-v="below">Below</button>
+          </div></div>
+        <div class="grp"><label>Keyboard (hide it for a full-screen trackpad)</label>
+          <div class="seg" data-key="kb"><button data-v="true">Show</button><button data-v="false">Hide</button></div></div>
+        <div class="grp"><label>Trackpad size: <span id="sizeV"></span></label>
+          <input type="range" id="size" min="20" max="75" step="1"></div>
+        <div class="grp"><label>Pointer speed: <span id="speedV"></span></label>
+          <input type="range" id="speed" min="1" max="8" step="0.5"></div>
+        <div class="grp"><label>Tap to click</label>
+          <div class="seg" data-key="tap"><button data-v="true">On</button><button data-v="false">Off</button></div></div>
+        <div class="grp"><label>Natural scrolling</label>
+          <div class="seg" data-key="natural"><button data-v="true">On</button><button data-v="false">Off</button></div></div>
+      </div>
+      <p style="color:var(--muted);font-size:12px;margin:10px 0 0">
+        Trackpad: one finger moves, tap = click, double-tap and hold = drag, two fingers = scroll,
+        two-finger tap or Right click = Back.
+      </p>
+    </div>
+  </div>
+
+  <div id="rotate"><div class="ic">&#x21BB;</div><div>Rotate to landscape</div></div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- layout ----------
+  const L = (c, s, w) => ({ c, s, w: w || 1 });                    // character key
+  const F = (sp, label, w, o) => Object.assign({ sp, label, w: w || 1, fn: true }, o); // special key
+  const M = (mod, label, w) => ({ mod, label, w: w || 1, fn: true });                  // modifier key
+
+  const row = (chars, shifted) => [...chars].map((c, i) => L(c, shifted[i]));
+
+  const rows = [
+    [F('ESC', 'esc', 1.3), L('`', '~'), ...row('1234567890', '!@#$%^&*()'), L('-', '_'), L('=', '+'),
+      F('BACKSPACE', '⌫', 1.8, { rep: true })],
+    [F('TAB', 'tab', 1.5), ...row('qwertyuiop', 'QWERTYUIOP'), L('[', '{'), L(']', '}'), L('\\', '|')],
+    [M('caps', 'caps', 1.8), ...row('asdfghjkl', 'ASDFGHJKL'), L(';', ':'), L("'", '"'), F('ENTER', 'enter', 2.2)],
+    [M('shift', '⇧', 2.3), ...row('zxcvbnm', 'ZXCVBNM'), L(',', '<'), L('.', '>'), L('/', '?'), M('shift', '⇧', 2.3)],
+    [M('ctrl', 'ctrl', 1.4), M('alt', 'alt', 1.2), M('meta', '⌘', 1.2), { c: ' ', w: 6, space: true, rep: true },
+      F('LEFT', '←', 1, { rep: true }), F('DOWN', '↓', 1, { rep: true }),
+      F('UP', '↑', 1, { rep: true }), F('RIGHT', '→', 1, { rep: true })],
+  ];
+
+  // ---------- state ----------
+  const mods = { shift: false, caps: false, ctrl: false, alt: false, meta: false };
+  const modEls = [];
+
+  const DEFAULTS = { pad: 'right', kb: true, size: 34, speed: 2.5, natural: true, tap: true };
+  let S = Object.assign({}, DEFAULTS);
+  try { Object.assign(S, JSON.parse(localStorage.getItem('rk-settings') || '{}')); } catch (e) {}
+  let mouseOk = null;     // does the tablet have the mouse (accessibility) service running?
+  const SCROLL_GAIN = 2.5;
+
+  // ---------- networking ----------
+  let ws = null, authed = false, pin = '', pinBad = false, lastPong = 0, retry = null;
+  try { pin = localStorage.getItem('rk-pin') || ''; } catch (e) {}
+
+  const $ = id => document.getElementById(id);
+  const setState = (kind, text) => {
+    $('dot').className = kind; $('state').textContent = text;
+  };
+  const setScreen = n => {
+    document.body.classList.toggle('pin', n === 'pin');
+    document.body.classList.toggle('kb', n === 'kb');
+  };
+  const showPin = err => { setScreen('pin'); $('pinErr').textContent = err || ''; $('pinInput').value = pin; };
+  const showKb = () => setScreen('kb');
+  function refreshState() {
+    if (!authed) return;
+    if (S.pad !== 'off' && mouseOk === false) setState('wait', 'Connected. Mouse is off: enable it on the tablet');
+    else setState('ok', 'Connected');
+  }
+  const sendCursor = () => { if (authed) send({ t: 'cursor', on: S.pad !== 'off' }); };
+
+  function connect() {
+    if (!pin || pinBad) return;
+    if (ws && ws.readyState <= 1) return;
+    clearTimeout(retry);
+    setState('wait', 'Connecting…');
+    try {
+      ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    } catch (e) { return scheduleRetry(); }
+    const mine = ws;
+    mine.onopen = () => mine.send(JSON.stringify({ t: 'auth', pin }));
+    mine.onmessage = ev => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.t === 'pong') { lastPong = Date.now(); }
+      else if (m.t === 'mouse') { mouseOk = m.ok; refreshState(); }
+      else if (m.t === 'auth') {
+        if (m.ok) {
+          authed = true; lastPong = Date.now();
+          try { localStorage.setItem('rk-pin', pin); } catch (e) {}
+          showKb(); refreshState(); sendCursor();
+        } else {
+          authed = false; pinBad = true; mine.close();
+          showPin(m.reason === 'locked' ? 'Too many attempts. Wait a minute and try again.' : 'Wrong PIN.');
+          setState('bad', 'Not connected');
+        }
+      }
+    };
+    mine.onclose = () => {
+      if (ws !== mine) return;
+      authed = false;
+      if (!pinBad) { setState('wait', 'Reconnecting…'); scheduleRetry(); }
+    };
+    mine.onerror = () => {};
+  }
+  function scheduleRetry() { clearTimeout(retry); retry = setTimeout(connect, 1500); }
+
+  function send(obj) {
+    if (authed && ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+    else { setState('wait', 'Not connected'); connect(); }
+  }
+
+  setInterval(() => {
+    if (!ws || ws.readyState !== 1 || !authed) return;
+    if (Date.now() - lastPong > 20000) { ws.close(); return; } // stale socket
+    ws.send('{"t":"ping"}');
+  }, 8000);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') connect();
+  });
+  window.addEventListener('pageshow', connect);
+
+  // ---------- key handling ----------
+  function renderMods() {
+    for (const { el, mod } of modEls) el.classList.toggle('on', mods[mod]);
+    document.querySelectorAll('.key[data-c]').forEach(el => {
+      const up = (/[a-z]/.test(el.dataset.c)) ? (mods.shift !== mods.caps) : mods.shift;
+      el.textContent = up ? el.dataset.s : el.dataset.c;
+    });
+  }
+
+  function press(k) {
+    if (k.mod) { mods[k.mod] = !mods[k.mod]; renderMods(); return; }
+
+    const m = [];
+    if (mods.ctrl) m.push('ctrl');
+    if (mods.alt) m.push('alt');
+    if (mods.meta) m.push('meta');
+
+    if (k.sp) {
+      if (mods.shift) m.push('shift');
+      send({ t: 'key', k: k.sp, m });
+    } else {
+      const isLetter = /[a-z]/.test(k.c);
+      const upper = isLetter ? (mods.shift !== mods.caps) : mods.shift;
+      if (m.length) {                          // shortcut such as Ctrl+C
+        if (mods.shift) m.push('shift');
+        send({ t: 'key', k: k.space ? 'SPACE' : k.c, m });
+      } else {
+        send({ t: 'text', v: upper && k.s ? k.s : k.c });
+      }
+    }
+    // one-shot modifiers release after a key
+    if (mods.shift || mods.ctrl || mods.alt || mods.meta) {
+      mods.shift = mods.ctrl = mods.alt = mods.meta = false; renderMods();
+    }
+  }
+
+  function build() {
+    const kb = $('kb');
+    for (const r of rows) {
+      const rowEl = document.createElement('div'); rowEl.className = 'row';
+      for (const k of r) {
+        const el = document.createElement('div');
+        el.className = 'key' + (k.fn ? ' fn' : '');
+        el.style.flexGrow = k.w;
+        if (k.c !== undefined && !k.space) { el.dataset.c = k.c; el.dataset.s = k.s || k.c.toUpperCase(); el.textContent = k.c; }
+        else if (k.space) { el.textContent = ''; }
+        else el.textContent = k.label;
+        if (k.mod) modEls.push({ el, mod: k.mod });
+        attach(el, k);
+        rowEl.appendChild(el);
+      }
+      kb.appendChild(rowEl);
+    }
+  }
+
+  function attach(el, k) {
+    let t1 = null, t2 = null;
+    const stop = () => { clearTimeout(t1); clearInterval(t2); t1 = t2 = null; el.classList.remove('down'); };
+    el.addEventListener('pointerdown', ev => {
+      ev.preventDefault();
+      try { el.setPointerCapture(ev.pointerId); } catch (e) {}
+      el.classList.add('down');
+      wake();
+      press(k);
+      if (k.rep) t1 = setTimeout(() => { t2 = setInterval(() => press(k), 45); }, 380);
+    });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(n => el.addEventListener(n, stop));
+  }
+
+  // keep the phone awake while typing (iOS 16.4+ in home-screen apps)
+  let lock = null;
+  async function wake() {
+    try { if (!lock && navigator.wakeLock) { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => lock = null); } }
+    catch (e) {}
+  }
+
+  // block pinch/double-tap zoom and scrolling gestures
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(n => document.addEventListener(n, e => e.preventDefault()));
+  document.addEventListener('touchmove', e => { if (!e.target.closest('#pinInput, #settings')) e.preventDefault(); }, { passive: false });
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  // ---------- settings ----------
+  function applySettings(save = true) {
+    if (S.pad === 'off' && !S.kb) S.kb = true;        // never hide everything
+    const b = document.body.classList;
+    ['off', 'left', 'right', 'above', 'below'].forEach(p => b.toggle('pos-' + p, S.pad === p));
+    b.toggle('kbhide', !S.kb);
+    $('pad').style.flex = '0 0 ' + S.size + '%';
+    $('size').value = S.size; $('sizeV').textContent = S.size + '%';
+    $('speed').value = S.speed; $('speedV').textContent = S.speed;
+    document.querySelectorAll('.seg').forEach(seg => {
+      seg.querySelectorAll('button').forEach(btn =>
+        btn.classList.toggle('sel', String(S[seg.dataset.key]) === btn.dataset.v));
+    });
+    if (save) { try { localStorage.setItem('rk-settings', JSON.stringify(S)); } catch (e) {} }
+    refreshState(); sendCursor();
+  }
+  document.querySelectorAll('.seg button').forEach(btn => btn.addEventListener('click', () => {
+    const k = btn.parentElement.dataset.key, v = btn.dataset.v;
+    S[k] = (v === 'true') ? true : (v === 'false') ? false : v;
+    applySettings();
+  }));
+  $('size').addEventListener('input', e => { S.size = +e.target.value; applySettings(); });
+  $('speed').addEventListener('input', e => { S.speed = +e.target.value; applySettings(); });
+  $('setBtn').addEventListener('click', () => $('settings').classList.add('open'));
+  $('setDone').addEventListener('click', () => $('settings').classList.remove('open'));
+  $('settings').addEventListener('click', e => { if (e.target.id === 'settings') $('settings').classList.remove('open'); });
+
+  // ---------- trackpad ----------
+  const surf = $('padSurface');
+  let tp = null, lastTapEnd = 0, ax = 0, ay = 0, sx = 0, sy = 0, raf = 0;
+
+  function flush() {
+    raf = 0;
+    if (ax || ay) { send({ t: 'move', dx: +ax.toFixed(1), dy: +ay.toFixed(1) }); ax = ay = 0; }
+    if (sx || sy) { send({ t: 'scroll', dx: +sx.toFixed(1), dy: +sy.toFixed(1) }); sx = sy = 0; }
+  }
+  const sched = () => { if (!raf) raf = requestAnimationFrame(flush); };
+  const centre = ts => {
+    let x = 0, y = 0; for (const t of ts) { x += t.clientX; y += t.clientY; }
+    return { x: x / ts.length, y: y / ts.length };
+  };
+
+  surf.addEventListener('touchstart', e => {
+    e.preventDefault(); wake();
+    const ts = e.targetTouches, c = centre(ts), n = ts.length;
+    if (!tp) {
+      tp = { t0: Date.now(), travel: 0, max: n, drag: false, x: c.x, y: c.y };
+      if (n === 1 && Date.now() - lastTapEnd < 300) { tp.drag = true; send({ t: 'down' }); }
+    } else { tp.max = Math.max(tp.max, n); tp.x = c.x; tp.y = c.y; }
+  }, { passive: false });
+
+  surf.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (!tp) return;
+    const ts = e.targetTouches, n = ts.length, c = centre(ts);
+    const dx = c.x - tp.x, dy = c.y - tp.y;
+    tp.x = c.x; tp.y = c.y; tp.travel += Math.hypot(dx, dy);
+    if (n >= 2 && !tp.drag) {
+      const g = (S.natural ? 1 : -1) * SCROLL_GAIN;
+      sx += dx * g; sy += dy * g; sched();
+    } else if (n === 1) {
+      const gain = S.speed * (1 + Math.min(Math.hypot(dx, dy) / 10, 1.5));
+      ax += dx * gain; ay += dy * gain; sched();
+    }
+  }, { passive: false });
+
+  function padEnd(e, cancelled) {
+    e.preventDefault();
+    if (!tp) return;
+    if (e.targetTouches.length > 0) { const c = centre(e.targetTouches); tp.x = c.x; tp.y = c.y; return; }
+    flush();
+    if (tp.drag) send({ t: 'up' });
+    else if (!cancelled && tp.travel < 8 && Date.now() - tp.t0 < 300) {
+      if (tp.max === 1 && S.tap) { send({ t: 'click' }); lastTapEnd = Date.now(); }
+      else if (tp.max === 2) send({ t: 'rclick' });
+    }
+    tp = null;
+  }
+  surf.addEventListener('touchend', e => padEnd(e, false), { passive: false });
+  surf.addEventListener('touchcancel', e => padEnd(e, true), { passive: false });
+
+  // on-screen buttons: Left is hold-able (use it with another finger on the pad to drag)
+  const lBtn = $('lBtn'), rBtn = $('rBtn');
+  lBtn.addEventListener('pointerdown', e => { e.preventDefault(); lBtn.setPointerCapture(e.pointerId); lBtn.classList.add('down'); send({ t: 'down' }); });
+  ['pointerup', 'pointercancel'].forEach(n => lBtn.addEventListener(n, () => {
+    if (lBtn.classList.contains('down')) { lBtn.classList.remove('down'); send({ t: 'up' }); }
+  }));
+  rBtn.addEventListener('pointerdown', e => { e.preventDefault(); rBtn.classList.add('down'); send({ t: 'rclick' }); });
+  ['pointerup', 'pointercancel'].forEach(n => rBtn.addEventListener(n, () => rBtn.classList.remove('down')));
+
+  // ---------- PIN screen ----------
+  function submitPin() {
+    const v = $('pinInput').value.trim();
+    if (!v) return;
+    pin = v; pinBad = false; $('pinErr').textContent = '';
+    if (ws && ws.readyState <= 1) ws.close();
+    connect();
+  }
+  $('pinGo').addEventListener('click', submitPin);
+  $('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') submitPin(); });
+  $('pinBtn').addEventListener('click', () => { pinBad = true; if (ws) ws.close(); showPin(''); setState('bad', 'Not connected'); });
+
+  // ---------- go ----------
+  build();
+  renderMods();
+  applySettings(false);
+  if (pin) { setScreen('pin'); connect(); } else showPin('');
+})();
+</script>
+</body>
+</html>

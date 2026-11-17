@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Remote Keyboard</string>
+    <string name="ime_label">Remote Keyboard (iPhone)</string>
+    <string name="a11y_label">Remote Keyboard mouse</string>
+    <string name="a11y_desc">Draws a mouse cursor and performs taps, drags and scrolls at the cursor position when you use the trackpad on your iPhone. It does not read screen content.</string>
+</resources>
