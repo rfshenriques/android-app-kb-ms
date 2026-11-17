@@ -24,12 +24,14 @@
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 
-  #bar { flex: none; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+  #bar { flex: none; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 12px;
     background: var(--bar); font-size: 13px; color: var(--muted); }
   #dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
   #dot.ok { background: var(--ok); } #dot.wait { background: var(--warn); }
   #bar .sp { flex: 1; }
-  #bar button { background: none; border: 0; color: var(--accent); font-size: 13px; padding: 4px 6px; }
+  #bar button { background: #262b36; border: 0; border-radius: 8px; color: var(--accent); font-size: 15px;
+    min-height: 34px; min-width: 76px; padding: 0 14px; }
+  button { touch-action: manipulation; }
 
   #main { flex: 1; min-height: 0; display: none; gap: 6px; padding: 6px; }
   body.kb #main { display: flex; }
@@ -45,13 +47,7 @@
   body.kbhide #pad { flex: 1 1 0 !important; }
   #padSurface { flex: 1; min-height: 0; border-radius: 10px; background: #181b22; border: 1px solid #2a2f3a;
     display: flex; align-items: center; justify-content: center; color: #3a4150; font-size: 13px; touch-action: none; }
-  #padBtns { flex: none; height: 34%; max-height: 54px; min-height: 34px; display: flex; gap: 5px; }
-  .pbtn { flex: 1; display: flex; align-items: center; justify-content: center; border-radius: 8px;
-    background: var(--key-fn); color: #c6cad6; font-size: 13px; touch-action: none; box-shadow: 0 1px 0 rgba(0,0,0,.5); }
-  .pbtn.down { background: var(--key-down); }
-  /* above/below: short wide strip, so put the click buttons beside the surface */
-  body.pos-above #pad, body.pos-below #pad { flex-direction: row; }
-  body.pos-above #padBtns, body.pos-below #padBtns { flex-direction: column; height: auto; max-height: none; min-height: 0; flex: 0 0 24%; }
+  #padSurface.hold { background: #222c44; border-color: var(--accent); color: var(--accent); }
   .row { flex: 1; display: flex; gap: 5px; min-height: 0; }
   .key { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center;
     background: var(--key); border-radius: 7px; font-size: clamp(14px, 3.6vh, 22px); font-weight: 500;
@@ -111,7 +107,6 @@
   <div id="main">
     <div id="pad">
       <div id="padSurface">trackpad</div>
-      <div id="padBtns"><div class="pbtn" id="lBtn">Left click</div><div class="pbtn" id="rBtn">Right click</div></div>
     </div>
     <div id="kb"></div>
   </div>
@@ -137,8 +132,8 @@
           <div class="seg" data-key="natural"><button data-v="true">On</button><button data-v="false">Off</button></div></div>
       </div>
       <p style="color:var(--muted);font-size:12px;margin:10px 0 0">
-        Trackpad: one finger moves, tap = click, double-tap and hold = drag, two fingers = scroll,
-        two-finger tap or Right click = Back.
+        Trackpad: one finger moves, tap = click, two quick taps = double click, press and hold = long press
+        (right-click / context menu; keep moving to drag), two fingers = scroll, two-finger tap = Back.
       </p>
     </div>
   </div>
@@ -330,6 +325,17 @@
   document.addEventListener('touchmove', e => { if (!e.target.closest('#pinInput, #settings')) e.preventDefault(); }, { passive: false });
   document.addEventListener('contextmenu', e => e.preventDefault());
 
+  // ---------- tap helper ----------
+  function onTap(el, fn) {
+    let id = null, x0 = 0, y0 = 0, fired = 0;
+    el.addEventListener('pointerdown', e => { id = e.pointerId; x0 = e.clientX; y0 = e.clientY; });
+    el.addEventListener('pointerup', e => {
+      if (e.pointerId === id && Math.hypot(e.clientX - x0, e.clientY - y0) < 14) { id = null; fired = Date.now(); fn(e); }
+    });
+    el.addEventListener('pointercancel', () => { id = null; });
+    el.addEventListener('click', e => { if (Date.now() - fired > 600) fn(e); });   // keyboard / mouse fallback
+  }
+
   // ---------- settings ----------
   function applySettings(save = true) {
     if (S.pad === 'off' && !S.kb) S.kb = true;        // never hide everything
@@ -346,27 +352,32 @@
     if (save) { try { localStorage.setItem('rk-settings', JSON.stringify(S)); } catch (e) {} }
     refreshState(); sendCursor();
   }
-  document.querySelectorAll('.seg button').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('.seg button').forEach(btn => onTap(btn, () => {
     const k = btn.parentElement.dataset.key, v = btn.dataset.v;
     S[k] = (v === 'true') ? true : (v === 'false') ? false : v;
     applySettings();
   }));
   $('size').addEventListener('input', e => { S.size = +e.target.value; applySettings(); });
   $('speed').addEventListener('input', e => { S.speed = +e.target.value; applySettings(); });
-  $('setBtn').addEventListener('click', () => $('settings').classList.add('open'));
-  $('setDone').addEventListener('click', () => $('settings').classList.remove('open'));
+  onTap($('setBtn'), () => $('settings').classList.add('open'));
+  onTap($('setDone'), () => $('settings').classList.remove('open'));
   $('settings').addEventListener('click', e => { if (e.target.id === 'settings') $('settings').classList.remove('open'); });
 
   // ---------- trackpad ----------
   const surf = $('padSurface');
-  let tp = null, lastTapEnd = 0, ax = 0, ay = 0, sx = 0, sy = 0, raf = 0;
+  const HOLD_MS = 450, TAP_MS = 300, SLOP = 10;
+  let tp = null, ax = 0, ay = 0, sx = 0, sy = 0, raf = 0;
 
   function flush() {
-    raf = 0;
-    if (ax || ay) { send({ t: 'move', dx: +ax.toFixed(1), dy: +ay.toFixed(1) }); ax = ay = 0; }
-    if (sx || sy) { send({ t: 'scroll', dx: +sx.toFixed(1), dy: +sy.toFixed(1) }); sx = sy = 0; }
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (ax || ay) { send({ t: 'move', dx: +ax.toFixed(2), dy: +ay.toFixed(2) }); ax = ay = 0; }
+    if (sx || sy) { send({ t: 'scroll', dx: +sx.toFixed(2), dy: +sy.toFixed(2) }); sx = sy = 0; }
   }
-  const sched = () => { if (!raf) raf = requestAnimationFrame(flush); };
+  // send straight away (lowest latency); only batch while the socket is backed up
+  const busy = () => ws && ws.bufferedAmount > 2048;
+  const later = () => { if (!raf) raf = requestAnimationFrame(flush); };
+  const pushMove = (dx, dy) => { ax += dx; ay += dy; busy() ? later() : flush(); };
+  const pushScroll = (dx, dy) => { sx += dx; sy += dy; busy() ? later() : flush(); };
   const centre = ts => {
     let x = 0, y = 0; for (const t of ts) { x += t.clientX; y += t.clientY; }
     return { x: x / ts.length, y: y / ts.length };
@@ -376,23 +387,30 @@
     e.preventDefault(); wake();
     const ts = e.targetTouches, c = centre(ts), n = ts.length;
     if (!tp) {
-      tp = { t0: Date.now(), travel: 0, max: n, drag: false, x: c.x, y: c.y };
-      if (n === 1 && Date.now() - lastTapEnd < 300) { tp.drag = true; send({ t: 'down' }); }
-    } else { tp.max = Math.max(tp.max, n); tp.x = c.x; tp.y = c.y; }
+      tp = { t0: Date.now(), lt: e.timeStamp, travel: 0, max: n, holding: false, x: c.x, y: c.y, timer: null };
+      if (n === 1) tp.timer = setTimeout(() => {
+        if (tp && !tp.holding && tp.max === 1 && tp.travel < SLOP) {
+          tp.holding = true; flush(); send({ t: 'hold' }); surf.classList.add('hold');
+        }
+      }, HOLD_MS);
+    } else { tp.max = Math.max(tp.max, n); tp.x = c.x; tp.y = c.y; clearTimeout(tp.timer); }
   }, { passive: false });
 
   surf.addEventListener('touchmove', e => {
     e.preventDefault();
     if (!tp) return;
     const ts = e.targetTouches, n = ts.length, c = centre(ts);
-    const dx = c.x - tp.x, dy = c.y - tp.y;
-    tp.x = c.x; tp.y = c.y; tp.travel += Math.hypot(dx, dy);
-    if (n >= 2 && !tp.drag) {
+    const dx = c.x - tp.x, dy = c.y - tp.y, dt = Math.max(e.timeStamp - tp.lt, 1);
+    tp.x = c.x; tp.y = c.y; tp.lt = e.timeStamp; tp.travel += Math.hypot(dx, dy);
+    if (!tp.holding && tp.travel >= SLOP) clearTimeout(tp.timer);
+    if (n >= 2 && !tp.holding) {
       const g = (S.natural ? 1 : -1) * SCROLL_GAIN;
-      sx += dx * g; sy += dy * g; sched();
+      pushScroll(dx * g, dy * g);
     } else if (n === 1) {
-      const gain = S.speed * (1 + Math.min(Math.hypot(dx, dy) / 10, 1.5));
-      ax += dx * gain; ay += dy * gain; sched();
+      // speed-based acceleration: slow = precise, fast flick = across the screen
+      const v = Math.hypot(dx, dy) / dt;                      // css px per ms
+      const gain = S.speed * (0.5 + 1.2 * Math.min(v, 2.5));
+      pushMove(dx * gain, dy * gain);
     }
   }, { passive: false });
 
@@ -400,25 +418,16 @@
     e.preventDefault();
     if (!tp) return;
     if (e.targetTouches.length > 0) { const c = centre(e.targetTouches); tp.x = c.x; tp.y = c.y; return; }
-    flush();
-    if (tp.drag) send({ t: 'up' });
-    else if (!cancelled && tp.travel < 8 && Date.now() - tp.t0 < 300) {
-      if (tp.max === 1 && S.tap) { send({ t: 'click' }); lastTapEnd = Date.now(); }
-      else if (tp.max === 2) send({ t: 'rclick' });
+    clearTimeout(tp.timer); flush();
+    if (tp.holding) { send({ t: 'up' }); surf.classList.remove('hold'); }
+    else if (!cancelled && tp.travel < SLOP && Date.now() - tp.t0 < TAP_MS) {
+      if (tp.max === 1 && S.tap) send({ t: 'click' });        // two quick taps = double click
+      else if (tp.max === 2) send({ t: 'rclick' });            // two-finger tap = Back
     }
     tp = null;
   }
   surf.addEventListener('touchend', e => padEnd(e, false), { passive: false });
   surf.addEventListener('touchcancel', e => padEnd(e, true), { passive: false });
-
-  // on-screen buttons: Left is hold-able (use it with another finger on the pad to drag)
-  const lBtn = $('lBtn'), rBtn = $('rBtn');
-  lBtn.addEventListener('pointerdown', e => { e.preventDefault(); lBtn.setPointerCapture(e.pointerId); lBtn.classList.add('down'); send({ t: 'down' }); });
-  ['pointerup', 'pointercancel'].forEach(n => lBtn.addEventListener(n, () => {
-    if (lBtn.classList.contains('down')) { lBtn.classList.remove('down'); send({ t: 'up' }); }
-  }));
-  rBtn.addEventListener('pointerdown', e => { e.preventDefault(); rBtn.classList.add('down'); send({ t: 'rclick' }); });
-  ['pointerup', 'pointercancel'].forEach(n => rBtn.addEventListener(n, () => rBtn.classList.remove('down')));
 
   // ---------- PIN screen ----------
   function submitPin() {
@@ -428,9 +437,9 @@
     if (ws && ws.readyState <= 1) ws.close();
     connect();
   }
-  $('pinGo').addEventListener('click', submitPin);
+  onTap($('pinGo'), submitPin);
   $('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') submitPin(); });
-  $('pinBtn').addEventListener('click', () => { pinBad = true; if (ws) ws.close(); showPin(''); setState('bad', 'Not connected'); });
+  onTap($('pinBtn'), () => { pinBad = true; if (ws) ws.close(); showPin(''); setState('bad', 'Not connected'); });
 
   // ---------- go ----------
   build();

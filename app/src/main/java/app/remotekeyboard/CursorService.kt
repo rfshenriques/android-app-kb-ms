@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
+import android.view.Choreographer
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -39,8 +40,21 @@ class CursorService : AccessibilityService() {
     private var wm: WindowManager? = null
     private var cursor: CursorView? = null
     private var lp: WindowManager.LayoutParams? = null
-    private var x = 0f
+    private var x = 0f          // logical cursor position (used for clicks and gestures)
     private var y = 0f
+    private var vx = 0f         // displayed position, eases toward x/y once per frame
+    private var vy = 0f
+    private var animating = false
+    private val frame = Choreographer.FrameCallback {
+        animating = false
+        vx += (x - vx) * 0.6f
+        vy += (y - vy) * 0.6f
+        if (Math.abs(x - vx) < 0.4f && Math.abs(y - vy) < 0.4f) { vx = x; vy = y } else scheduleFrame()
+        placeCursor()
+    }
+    private fun scheduleFrame() {
+        if (!animating) { animating = true; Choreographer.getInstance().postFrameCallback(frame) }
+    }
     private var screenW = 1
     private var screenH = 1
     private var density = 1f
@@ -60,6 +74,7 @@ class CursorService : AccessibilityService() {
         updateScreen()
         x = screenW / 2f
         y = screenH / 2f
+        vx = x; vy = y
         instance = this
     }
 
@@ -87,7 +102,7 @@ class CursorService : AccessibilityService() {
         x = (x + dx).coerceIn(0f, screenW - 1f)
         y = (y + dy).coerceIn(0f, screenH - 1f)
         showCursor()
-        placeCursor()
+        scheduleFrame()          // one layout update per display frame, however fast messages arrive
         if (mode == Mode.DRAG) finger.moveTo(x, y)
     }
 
@@ -95,7 +110,7 @@ class CursorService : AccessibilityService() {
         if (finger.active) return
         val path = Path().apply { moveTo(x, y) }
         val g = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 40))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 30))
             .build()
         dispatchGesture(g, null, null)
     }
@@ -108,6 +123,13 @@ class CursorService : AccessibilityService() {
         if (finger.active) return
         mode = Mode.DRAG
         finger.begin(x, y)
+    }
+
+    /** Press and hold at the cursor: a long press (context menu); moving afterwards drags. */
+    fun hold() {
+        if (finger.active) return
+        mode = Mode.DRAG
+        finger.begin(x, y, 650)
     }
 
     fun up() {
@@ -168,11 +190,14 @@ class CursorService : AccessibilityService() {
         ).apply { gravity = Gravity.TOP or Gravity.START }
         lp = params
         cursor = v
+        vx = x; vy = y
         placeCursor()
         try { wm?.addView(v, params) } catch (e: Exception) { cursor = null }
     }
 
     private fun hideCursor() {
+        Choreographer.getInstance().removeFrameCallback(frame)
+        animating = false
         cursor?.let { try { wm?.removeView(it) } catch (e: Exception) {} }
         cursor = null
     }
@@ -180,8 +205,8 @@ class CursorService : AccessibilityService() {
     private fun placeCursor() {
         val v = cursor ?: return
         val p = lp ?: return
-        p.x = (x - density).toInt()
-        p.y = (y - density).toInt()
+        p.x = (vx - density).toInt()
+        p.y = (vy - density).toInt()
         try { wm?.updateViewLayout(v, p) } catch (e: Exception) {}
     }
 
@@ -214,12 +239,12 @@ class CursorService : AccessibilityService() {
         private var busy = false
         private var ending = false
 
-        fun begin(px: Float, py: Float) {
+        fun begin(px: Float, py: Float, holdMs: Long = 1) {
             if (active) return
             active = true; ending = false; pending = null; stroke = null
             last.set(px, py)
             val path = Path().apply { moveTo(px, py) }
-            dispatch(GestureDescription.StrokeDescription(path, 0, 1, true), final = false)
+            dispatch(GestureDescription.StrokeDescription(path, 0, holdMs, true), final = false)
         }
 
         fun moveTo(px: Float, py: Float) {
@@ -239,7 +264,7 @@ class CursorService : AccessibilityService() {
             if (busy) return
             val to = pending ?: (if (ending) PointF(last.x, last.y) else return)
             val path = Path().apply { moveTo(last.x, last.y); lineTo(to.x, to.y) }
-            val next = s.continueStroke(path, 0, 8, !ending)
+            val next = s.continueStroke(path, 0, 10, !ending)
             last.set(to)
             pending = null
             dispatch(next, final = ending)

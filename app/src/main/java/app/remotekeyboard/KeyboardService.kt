@@ -109,7 +109,7 @@ class KeyboardService : InputMethodService() {
     /** Trackpad messages go to the accessibility service. Returns true if the message was a mouse one. */
     private fun handleMouse(type: String, msg: JSONObject): Boolean {
         when (type) {
-            "move", "click", "rclick", "down", "up", "scroll", "cursor" -> {}
+            "move", "click", "rclick", "hold", "down", "up", "scroll", "cursor" -> {}
             else -> return false
         }
         val m = CursorService.instance ?: return true
@@ -119,6 +119,7 @@ class KeyboardService : InputMethodService() {
             "move" -> m.moveBy(dx, dy)
             "click" -> m.click()
             "rclick" -> m.rightClick()
+            "hold" -> m.hold()
             "down" -> m.down()
             "up" -> m.up()
             "scroll" -> m.scroll(dx, dy)

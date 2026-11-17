@@ -36,9 +36,9 @@ The service does not read screen content. The keyboard service must stay selecte
 - Trackpad position: Off / Left / Right / Above / Below the keyboard. The keyboard stretches to fill the rest.
 - Keyboard: Show or Hide (hide it and the trackpad fills the screen). The two can't both be off.
 - Trackpad size, pointer speed, tap-to-click and natural scrolling. Settings are remembered on the iPhone.
-- One finger moves, tap clicks, double-tap and hold drags, two fingers scroll.
-  Two-finger tap or the Right click button sends Back (Android has no right click).
-  Left click can be held with a second finger on the pad to drag.
+- One finger moves, tap clicks, two quick taps double-click, press and hold = long press
+  (Android's "right click": context menus), keep moving after the hold to drag, two fingers scroll,
+  two-finger tap = Back.
 
 ## Notes
 - Needs a focused text field on the tablet. It cannot type at lock-screen PIN prompts.
