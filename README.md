@@ -49,6 +49,13 @@ the keyboard popup and you tap Remote Keyboard once. To make it fully one-tap, r
 - Sliders: trackpad width and height, keyboard width and height (all remembered per trackpad position).
 - The top bar shows the live round-trip time to the tablet (for example "Connected · 8 ms"). Spikes turn the dot amber.
 
+## iOS native keyboard
+Settings, **Keyboard type**: Custom or **iOS native**, chosen separately for portrait and landscape
+(portrait defaults to native). In native mode the trackpad fills the screen and a row of extra keys sits at the bottom:
+esc, tab, ctrl, alt, cmd, arrows and a keyboard button. Tap the keyboard button to open the real iOS keyboard; the
+trackpad area shrinks to fit above it and grows back when it closes. Ctrl/alt/cmd work with letters typed on it
+(tap ctrl, then type c). Because the real iOS keyboard is used, its dictation, emoji and accent keys work too.
+
 ## Navigation buttons and typing preview (iPhone top bar)
 - Four buttons: **Home**, **Open apps** (recents), **Notifications** and **Quick settings** (Android's control centre).
   They use the mouse (Accessibility) service, so enable it first.

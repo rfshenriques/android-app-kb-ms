@@ -20,7 +20,7 @@
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font: 16px -apple-system, system-ui, sans-serif; overflow: hidden; overscroll-behavior: none; }
-  body { position: fixed; inset: 0; display: flex; flex-direction: column;
+  body { position: fixed; inset: 0; display: flex; flex-direction: column; transition: height .22s ease;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 
@@ -55,6 +55,13 @@
   #kb { order: 1; flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 5px; touch-action: none; }
   body.kbhide #kb { display: none; }
 
+  body.kbopen { padding-bottom: 0; }
+  #xrow { flex: none; display: none; gap: 5px; height: 46px; padding: 0 6px 6px; }
+  body.native #xrow { display: flex; }
+  body.pin #xrow { display: none; }
+  #natToggle { background: var(--accent); color: #fff; font-size: 20px; }
+  #nat { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0.01; border: 0; padding: 0;
+    font-size: 16px; -webkit-user-select: text; user-select: text; pointer-events: none; }
   #pad { display: flex; flex-direction: column; gap: 5px; min-width: 0; min-height: 0; flex: 0 1 auto; }
   body.pos-off #pad { display: none; }
   body.kbhide #pad { flex: 1 1 0 !important; width: auto !important; height: auto !important; align-self: stretch !important; }
@@ -139,6 +146,10 @@
     <div id="kb"></div>
   </div>
 
+  <div id="xrow"></div>
+  <input id="nat" type="text" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"
+    enterkeyhint="enter" inputmode="text" aria-label="Keyboard input">
+
   <div id="settings">
     <div id="panel">
       <h2>Settings <button id="setDone">Done</button></h2>
@@ -151,6 +162,8 @@
           </div></div>
         <div class="grp"><label>Keyboard (hide it for a full-screen trackpad)</label>
           <div class="seg" data-key="kb"><button data-v="true">Show</button><button data-v="false">Hide</button></div></div>
+        <div class="grp"><label>Keyboard type (this orientation)</label>
+          <div class="seg" data-key="kbtype"><button data-v="custom">Custom</button><button data-v="native">iOS native</button></div></div>
         <div class="grp"><label>Trackpad width: <span id="pwV"></span></label>
           <input type="range" id="pw" min="15" max="100" step="1"></div>
         <div class="grp"><label>Trackpad height: <span id="phV"></span></label>
@@ -218,8 +231,10 @@
     },
   };
   const PAD_DEF = { land: 'right', port: 'above' };
+  const KBTYPE_DEF = { land: 'custom', port: 'native' };
   const mkLayout = (o, saved) => {
-    const L = { pad: (saved && saved.pad) || PAD_DEF[o], kb: !(saved && saved.kb === false), d: {} };
+    const L = { pad: (saved && saved.pad) || PAD_DEF[o], kb: !(saved && saved.kb === false),
+      kbtype: (saved && saved.kbtype) || KBTYPE_DEF[o], d: {} };
     for (const p in SIZE_DEF[o]) L.d[p] = Object.assign({}, SIZE_DEF[o][p], (saved && saved.d && saved.d[p]) || {});
     return L;
   };
@@ -354,23 +369,43 @@
     }
   }
 
+  function mkKey(k, keepFocus) {
+    const el = document.createElement('div');
+    el.className = 'key' + (k.fn ? ' fn' : '');
+    el.style.flexGrow = k.w;
+    if (k.c !== undefined && !k.space) { el.dataset.c = k.c; el.dataset.s = k.s || k.c.toUpperCase(); el.textContent = k.c; }
+    else if (k.space) { el.textContent = ''; }
+    else el.textContent = k.label;
+    if (k.mod) modEls.push({ el, mod: k.mod });
+    if (k.toggle) {                                   // opens/closes the iOS keyboard (needs a real tap: click)
+      el.id = 'natToggle';
+      let was = false;
+      el.addEventListener('pointerdown', () => { was = natOpen; });
+      el.addEventListener('click', () => { if (was) natInput.blur(); else natFocus(); });
+    } else {
+      attach(el, k);
+      // keep the iOS keyboard open while these keys are used
+      if (keepFocus) el.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+    }
+    return el;
+  }
+
+  const xrowKeys = [
+    F('ESC', 'esc', 1.2), F('TAB', 'tab', 1.2), M('ctrl', 'ctrl', 1.2), M('alt', 'alt', 1.1), M('meta', '\u2318', 1),
+    F('LEFT', '\u2190', 1, { rep: true }), F('DOWN', '\u2193', 1, { rep: true }),
+    F('UP', '\u2191', 1, { rep: true }), F('RIGHT', '\u2192', 1, { rep: true }),
+    { toggle: true, label: '\u2328', w: 1.4, fn: true },
+  ];
+
   function build() {
     const kb = $('kb');
     for (const r of rows) {
       const rowEl = document.createElement('div'); rowEl.className = 'row';
-      for (const k of r) {
-        const el = document.createElement('div');
-        el.className = 'key' + (k.fn ? ' fn' : '');
-        el.style.flexGrow = k.w;
-        if (k.c !== undefined && !k.space) { el.dataset.c = k.c; el.dataset.s = k.s || k.c.toUpperCase(); el.textContent = k.c; }
-        else if (k.space) { el.textContent = ''; }
-        else el.textContent = k.label;
-        if (k.mod) modEls.push({ el, mod: k.mod });
-        attach(el, k);
-        rowEl.appendChild(el);
-      }
+      for (const k of r) rowEl.appendChild(mkKey(k, false));
       kb.appendChild(rowEl);
     }
+    const xr = $('xrow');
+    for (const k of xrowKeys) xr.appendChild(mkKey(k, true));
   }
 
   function attach(el, k) {
@@ -433,20 +468,22 @@
   }
 
   // ---------- settings ----------
-  const LAYKEYS = ['pad', 'kb'];                       // per-orientation; everything else is global
+  const LAYKEYS = ['pad', 'kb', 'kbtype'];                       // per-orientation; everything else is global
   const getKey = k => (LAYKEYS.includes(k) ? lay()[k] : S[k]);
 
   function layoutSizes() {
     const L = lay(), d = dims(), pad = $('pad'), kb = $('kb');
     const row = L.pad === 'left' || L.pad === 'right';
     for (const k of ['pw', 'ph', 'kw', 'kh']) { $(k).value = d[k]; $(k + 'V').textContent = d[k] + '%'; }
+    const nat = natOn();
     $('pw').disabled = $('ph').disabled = (L.pad === 'off');
+    $('kw').disabled = $('kh').disabled = nat;
     const full = d.kw >= 100;
     kb.style.height = L.kb ? d.kh + '%' : '';
     kb.style.alignSelf = (row || L.pad === 'off') ? 'flex-end' : 'center';
-    if (!L.kb || (row && full)) { kb.style.flex = '1 1 0'; kb.style.width = ''; }
+    if (!L.kb || nat || (row && full)) { kb.style.flex = '1 1 0'; kb.style.width = ''; }
     else { kb.style.flex = '0 1 auto'; kb.style.width = d.kw + '%'; }
-    if (L.pad === 'off' || !L.kb) { pad.style.width = pad.style.height = pad.style.alignSelf = ''; }
+    if (L.pad === 'off' || !L.kb || nat) { pad.style.width = pad.style.height = pad.style.alignSelf = ''; }
     else { pad.style.width = d.pw + '%'; pad.style.height = d.ph + '%'; pad.style.alignSelf = row ? 'flex-end' : 'center'; }
   }
   function applySettings(save = true) {
@@ -454,7 +491,10 @@
     if (L.pad === 'off' && !L.kb) L.kb = true;          // never hide everything
     const b = document.body.classList;
     ['off', 'left', 'right', 'above', 'below'].forEach(p => b.toggle('pos-' + p, L.pad === p));
-    b.toggle('kbhide', !L.kb);
+    const nat = natOn();
+    b.toggle('kbhide', !L.kb || nat);
+    b.toggle('native', nat);
+    if (!nat && natOpen) natInput.blur();
     b.toggle('nopreview', !S.preview);
     b.toggle('orient-port', orient() === 'port');
     $('layName').textContent = 'Editing the ' + (orient() === 'port' ? 'portrait' : 'landscape') +
@@ -565,6 +605,49 @@
   onTap($('pinGo'), submitPin);
   $('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') submitPin(); });
   onTap($('pinBtn'), () => { pinBad = true; if (ws) ws.close(); showPin(''); setState('bad', 'Not connected'); });
+
+  // ---------- iOS native keyboard ----------
+  // A hidden input summons the real iOS keyboard; what is typed is forwarded to the tablet.
+  // The input always holds one zero-width "sentinel" character so Backspace always has something to delete.
+  const natInput = $('nat');
+  const SENT = '\u200B';
+  let natOpen = false;
+  const natOn = () => { const L = lay(); return L.kbtype === 'native' && L.kb && L.pad !== 'off'; };
+  const natReset = () => { natInput.value = SENT; try { natInput.setSelectionRange(1, 1); } catch (e) {} };
+  function natFocus() { natInput.style.pointerEvents = 'auto'; natInput.focus({ preventScroll: true }); window.scrollTo(0, 0); }
+
+  function sendTyped(text) {
+    const m = [];
+    if (mods.ctrl) m.push('ctrl'); if (mods.alt) m.push('alt'); if (mods.meta) m.push('meta');
+    if (m.length && text.length === 1) send({ t: 'key', k: text.toLowerCase(), m });   // e.g. Ctrl+C
+    else send({ t: 'text', v: text });
+    if (mods.shift || mods.ctrl || mods.alt || mods.meta) { mods.shift = mods.ctrl = mods.alt = mods.meta = false; renderMods(); }
+  }
+  function natProcess() {
+    const v = natInput.value;
+    if (v === '') send({ t: 'key', k: 'BACKSPACE', m: [] });          // sentinel gone = Backspace
+    else if (v.startsWith(SENT)) { const t = v.slice(1); if (t) sendTyped(t); }
+    else sendTyped(v);                                                  // autocorrect replaced the sentinel
+    natReset();
+  }
+  natInput.addEventListener('input', e => { if (!e.isComposing) natProcess(); });
+  natInput.addEventListener('compositionend', natProcess);               // accents, dictation, emoji
+  natInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); send({ t: 'key', k: 'ENTER', m: [] }); } });
+  natInput.addEventListener('focus', () => { natOpen = true; natReset(); });
+  natInput.addEventListener('blur', () => { natOpen = false; natInput.style.pointerEvents = 'none'; });
+
+  // iOS keeps the page size when its keyboard opens; resize to the visible area so the trackpad
+  // slides up above the keyboard (and the PIN screen stays visible while typing the PIN)
+  const vv = window.visualViewport;
+  function fitViewport() {
+    if (!vv) return;
+    const open = vv.height < window.innerHeight - 80;
+    document.body.classList.toggle('kbopen', open);
+    document.body.style.height = open ? vv.height + 'px' : '';
+    document.body.style.top = open ? vv.offsetTop + 'px' : '';
+    if (open) window.scrollTo(0, 0);
+  }
+  if (vv) { vv.addEventListener('resize', fitViewport); vv.addEventListener('scroll', fitViewport); }
 
   // ---------- go ----------
   build();
