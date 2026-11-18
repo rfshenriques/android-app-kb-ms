@@ -29,6 +29,19 @@
   #dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
   #dot.ok { background: var(--ok); } #dot.wait { background: var(--warn); }
   #bar .sp { flex: 1; }
+  #state { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #nav { display: flex; gap: 6px; }
+  #nav button { min-width: 0; width: 42px; padding: 0; display: flex; align-items: center; justify-content: center; }
+  #nav svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+
+  #preview { flex: none; display: none; align-items: center; height: 34px; padding: 0 14px; background: #0d0f13;
+    border-bottom: 1px solid #1f232b; color: var(--text); font: 15px ui-monospace, Menlo, monospace;
+    white-space: pre; overflow: hidden; }
+  body.kb #preview { display: flex; }
+  body.nopreview #preview { display: none !important; }
+  #preview .hint { color: var(--muted); font-family: -apple-system, system-ui, sans-serif; font-size: 13px; }
+  #preview .caret { display: inline-block; width: 2px; height: 18px; margin: 0 1px; background: var(--accent); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
   #bar button { background: #262b36; border: 0; border-radius: 8px; color: var(--accent); font-size: 15px;
     min-height: 34px; min-width: 76px; padding: 0 14px; }
   button { touch-action: manipulation; }
@@ -92,9 +105,17 @@
   <div id="bar">
     <span id="dot"></span><span id="state">Not connected</span>
     <span class="sp"></span>
+    <div id="nav">
+      <button data-nav="home" title="Home" aria-label="Home"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg></button>
+      <button data-nav="recents" title="Open apps" aria-label="Open apps"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/></svg></button>
+      <button data-nav="notifications" title="Notifications" aria-label="Notifications"><svg viewBox="0 0 24 24"><path d="M18 16v-5a6 6 0 0 0-12 0v5l-2 2h16zM10 21h4"/></svg></button>
+      <button data-nav="quick" title="Quick settings" aria-label="Quick settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button>
+    </div>
     <button id="setBtn">Settings</button>
     <button id="pinBtn">PIN</button>
   </div>
+
+  <div id="preview"></div>
 
   <div id="pinScreen">
     <h1>Connect to your tablet</h1>
@@ -132,6 +153,8 @@
           <input type="range" id="speed" min="1" max="8" step="0.5"></div>
         <div class="grp"><label>Tap to click</label>
           <div class="seg" data-key="tap"><button data-v="true">On</button><button data-v="false">Off</button></div></div>
+        <div class="grp"><label>Typing preview</label>
+          <div class="seg" data-key="preview"><button data-v="true">On</button><button data-v="false">Off</button></div></div>
         <div class="grp"><label>Natural scrolling</label>
           <div class="seg" data-key="natural"><button data-v="true">On</button><button data-v="false">Off</button></div></div>
       </div>
@@ -176,7 +199,7 @@
     above: { pw: 60, ph: 34, kh: 66 },  below: { pw: 60, ph: 34, kh: 66 },
     off:   { pw: 24, ph: 100, kh: 85 },
   };
-  const DEFAULTS = { pad: 'right', kb: true, speed: 2.5, natural: true, tap: true };
+  const DEFAULTS = { pad: 'right', kb: true, speed: 2.5, natural: true, tap: true, preview: true };
   let S = Object.assign({}, DEFAULTS);
   let savedSizes = {};
   try {
@@ -225,6 +248,7 @@
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.t === 'pong') { lastPong = Date.now(); }
       else if (m.t === 'mouse') { mouseOk = m.ok; refreshState(); }
+      else if (m.t === 'preview') { renderPreview(m); }
       else if (m.t === 'auth') {
         if (m.ok) {
           authed = true; lastPong = Date.now();
@@ -354,6 +378,28 @@
     el.addEventListener('click', e => { if (Date.now() - fired > 600) fn(e); });   // keyboard / mouse fallback
   }
 
+  // ---------- navigation buttons ----------
+  document.querySelectorAll('#nav button').forEach(btn => onTap(btn, () => {
+    send({ t: 'nav', a: btn.dataset.nav });
+    if (mouseOk === false) setState('wait', 'Enable the mouse service on the tablet for these buttons');
+  }));
+
+  // ---------- typing preview (the real text around the cursor in the tablet's field) ----------
+  const pv = $('preview');
+  function hint(t) { pv.textContent = ''; const h = document.createElement('span'); h.className = 'hint'; h.textContent = t; pv.appendChild(h); }
+  function renderPreview(m) {
+    if (m.none) return hint('Tap a text field on the tablet to type');
+    if (m.secret) return hint('Password field: preview hidden');
+    const max = Math.max(24, Math.floor(pv.clientWidth / 9));
+    const nb = Math.floor(max * 0.7);
+    const b = (m.before || '').slice(-nb).replace(/\n/g, '\u21B5');
+    const a = (m.after || '').slice(0, Math.max(0, max - b.length - 1)).replace(/\n/g, '\u21B5');
+    pv.textContent = '';
+    pv.appendChild(document.createTextNode(b));
+    const caret = document.createElement('span'); caret.className = 'caret'; pv.appendChild(caret);
+    pv.appendChild(document.createTextNode(a));
+  }
+
   // ---------- settings ----------
   function layoutSizes() {
     const d = dims(), pad = $('pad'), kb = $('kb');
@@ -381,6 +427,7 @@
     const b = document.body.classList;
     ['off', 'left', 'right', 'above', 'below'].forEach(p => b.toggle('pos-' + p, S.pad === p));
     b.toggle('kbhide', !S.kb);
+    b.toggle('nopreview', !S.preview);
     layoutSizes();
     $('speed').value = S.speed; $('speedV').textContent = S.speed;
     document.querySelectorAll('.seg').forEach(seg => {

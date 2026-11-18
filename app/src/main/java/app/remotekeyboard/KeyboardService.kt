@@ -4,9 +4,11 @@ import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
@@ -18,6 +20,8 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.security.MessageDigest
+import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -30,6 +34,9 @@ class KeyboardService : InputMethodService() {
     private val main = Handler(Looper.getMainLooper())
     private var server: KbServer? = null
     private var statusView: TextView? = null
+    private val peers = CopyOnWriteArraySet<Client>()          // authenticated iPhones
+    private val sender = Executors.newSingleThreadExecutor()    // socket writes stay off the main thread
+    private var previewQueued = false
 
     companion object {
         @Volatile var running = false
@@ -56,6 +63,8 @@ class KeyboardService : InputMethodService() {
         server = null
         running = false
         clients.set(0)
+        peers.clear()
+        sender.shutdownNow()
         Setup.refreshWidgets(this)
         super.onDestroy()
     }
@@ -118,12 +127,60 @@ class KeyboardService : InputMethodService() {
                 (0 until a.length()).map { a.getString(it) }
             } ?: emptyList())
         }
+        schedulePreview()
+    }
+
+    // ---- live preview of the focused field, sent to the iPhone ----------------
+
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        schedulePreview()
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int,
+        candidatesStart: Int, candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        schedulePreview()
+    }
+
+    private fun schedulePreview() {
+        if (previewQueued || peers.isEmpty()) return
+        previewQueued = true
+        main.postDelayed({ previewQueued = false; sendPreview() }, 30)
+    }
+
+    private fun sendPreview() {
+        if (peers.isEmpty()) return
+        val ic = currentInputConnection
+        val ei = currentInputEditorInfo
+        val json = JSONObject().put("t", "preview")
+        if (ic == null || ei == null || ei.inputType == InputType.TYPE_NULL) {
+            json.put("none", true)
+        } else {
+            val cls = ei.inputType and InputType.TYPE_MASK_CLASS
+            val v = ei.inputType and InputType.TYPE_MASK_VARIATION
+            val secret = (cls == InputType.TYPE_CLASS_TEXT &&
+                (v == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                    v == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
+                    v == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)) ||
+                (cls == InputType.TYPE_CLASS_NUMBER && v == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
+            if (secret) {
+                json.put("secret", true)   // never send what is typed into password fields
+            } else {
+                json.put("before", ic.getTextBeforeCursor(120, 0)?.toString() ?: "")
+                json.put("after", ic.getTextAfterCursor(60, 0)?.toString() ?: "")
+            }
+        }
+        val text = json.toString()
+        try { sender.execute { peers.forEach { it.push(text) } } } catch (e: Exception) { /* shutting down */ }
     }
 
     /** Trackpad messages go to the accessibility service. Returns true if the message was a mouse one. */
     private fun handleMouse(type: String, msg: JSONObject): Boolean {
         when (type) {
-            "move", "click", "rclick", "hold", "down", "up", "scroll", "cursor" -> {}
+            "move", "click", "rclick", "hold", "down", "up", "scroll", "cursor", "nav" -> {}
             else -> return false
         }
         val m = CursorService.instance ?: return true
@@ -134,6 +191,7 @@ class KeyboardService : InputMethodService() {
             "click" -> m.click()
             "rclick" -> m.rightClick()
             "hold" -> m.hold()
+            "nav" -> m.nav(msg.optString("a"))
             "down" -> m.down()
             "up" -> m.up()
             "scroll" -> m.scroll(dx, dy)
@@ -207,6 +265,7 @@ class KeyboardService : InputMethodService() {
         override fun onOpen() {}
 
         override fun onClose(code: NanoWSD.WebSocketFrame.CloseCode?, reason: String?, initiatedByRemote: Boolean) {
+            peers.remove(this)
             if (authed) {
                 authed = false
                 if (clients.decrementAndGet() <= 0) main.post { CursorService.instance?.setCursorVisible(false) }
@@ -238,8 +297,10 @@ class KeyboardService : InputMethodService() {
                 failures = 0
                 if (!authed) {
                     authed = true
+                    peers.add(this)
                     clients.incrementAndGet()
                     refreshStatus()
+                    main.post { schedulePreview() }
                 }
                 reply("""{"t":"auth","ok":true}""")
             } else {
@@ -250,6 +311,8 @@ class KeyboardService : InputMethodService() {
                 reply("""{"t":"auth","ok":false,"reason":"pin"}""")
             }
         }
+
+        fun push(json: String) = reply(json)
 
         private fun reply(json: String) {
             try { send(json) } catch (e: IOException) { /* client gone */ }

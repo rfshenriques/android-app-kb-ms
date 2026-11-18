@@ -117,6 +117,18 @@ class CursorService : AccessibilityService() {
         dispatchGesture(g, null, null)
     }
 
+    /** Home / recent apps / notification shade / quick settings (Android's "control centre"). */
+    fun nav(action: String) {
+        val a = when (action) {
+            "home" -> GLOBAL_ACTION_HOME
+            "recents" -> GLOBAL_ACTION_RECENTS
+            "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
+            "quick" -> GLOBAL_ACTION_QUICK_SETTINGS
+            else -> return
+        }
+        performGlobalAction(a)
+    }
+
     fun rightClick() {
         performGlobalAction(GLOBAL_ACTION_BACK)
     }

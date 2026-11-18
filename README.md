@@ -42,6 +42,13 @@ the keyboard popup and you tap Remote Keyboard once. To make it fully one-tap, r
   (Android's "right click": context menus), keep moving after the hold to drag, two fingers scroll,
   two-finger tap = Back.
 
+## Navigation buttons and typing preview (iPhone top bar)
+- Four buttons: **Home**, **Open apps** (recents), **Notifications** and **Quick settings** (Android's control centre).
+  They use the mouse (Accessibility) service, so enable it first.
+- The strip under the bar is a live preview of the real text around the cursor in the tablet's focused field,
+  so you see edits, autocorrect and cursor moves. Password fields are never sent ("preview hidden").
+  Turn it off in Settings, Typing preview.
+
 ## Notes
 - Needs a focused text field on the tablet. It cannot type at lock-screen PIN prompts.
 - Shift, Ctrl, Alt and Cmd are one-shot (tap, then press a key). Caps is a toggle.
