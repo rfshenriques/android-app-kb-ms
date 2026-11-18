@@ -40,9 +40,29 @@ class KeyboardService : InputMethodService() {
     private var server: KbServer? = null
     private var statusView: TextView? = null
     private val peers = CopyOnWriteArraySet<Client>()          // authenticated iPhones
-    private val sender = Executors.newSingleThreadExecutor()    // socket writes stay off the main thread
+    private val sender = Executors.newSingleThreadExecutor()    // control-socket writes stay off the main thread
+    private val videoSender = Executors.newSingleThreadExecutor { r ->      // video writes: their own, lower-priority thread
+        Thread({
+            try { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND + 2) } catch (e: Exception) {}
+            r.run()
+        }, "rk-video")
+    }
     private var previewQueued = false
     private var wifiLock: WifiManager.WifiLock? = null
+
+    /** Each connection runs on a thread with display priority, so key presses and pointer moves are handled first. */
+    private class PriorityRunner : NanoHTTPD.AsyncRunner {
+        private val running = java.util.Collections.synchronizedList(ArrayList<NanoHTTPD.ClientHandler>())
+        override fun closeAll() { ArrayList(running).forEach { it.close() } }
+        override fun closed(h: NanoHTTPD.ClientHandler) { running.remove(h) }
+        override fun exec(h: NanoHTTPD.ClientHandler) {
+            running.add(h)
+            Thread({
+                try { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY) } catch (e: Exception) {}
+                h.run()
+            }, "rk-conn").apply { isDaemon = true }.start()
+        }
+    }
 
     /** Small packets (key presses, pointer moves) must not wait to be bundled: disable Nagle. */
     private object NoDelayFactory : NanoHTTPD.ServerSocketFactory {
@@ -67,6 +87,7 @@ class KeyboardService : InputMethodService() {
         try {
             server = KbServer(PORT).also {
                 it.setServerSocketFactory(NoDelayFactory)
+                it.setAsyncRunner(PriorityRunner())
                 it.start(0, true) // 0 = no socket read timeout
             }
         } catch (e: IOException) {
@@ -91,6 +112,7 @@ class KeyboardService : InputMethodService() {
         peers.clear()
         CursorService.instance?.releaseAll()
         sender.shutdownNow()
+        videoSender.shutdownNow()
         try { wifiLock?.release() } catch (e: Exception) {}
         wifiLock = null
         Setup.refreshWidgets(this)
@@ -158,34 +180,6 @@ class KeyboardService : InputMethodService() {
         schedulePreview()
     }
 
-    // ---- live view of the tablet screen, sent to the iPhone as JPEG frames -------------
-
-    private var viewLoop = false
-
-    private fun startViewLoop() {
-        if (viewLoop) return
-        viewLoop = true
-        main.post(viewTick)
-    }
-
-    private val viewTick = object : Runnable {
-        override fun run() {
-            val viewers = peers.filter { it.viewOn }
-            if (viewers.isEmpty()) { viewLoop = false; return }
-            val svc = CursorService.instance
-            if (svc == null) { main.postDelayed(this, 1500); return }          // mouse service off: nothing to capture with
-            val t0 = SystemClock.uptimeMillis()
-            svc.capture(viewers.maxOf { it.viewW }, viewers.maxOf { it.viewQ }) { jpeg ->
-                if (jpeg != null) {
-                    try { sender.execute { peers.forEach { if (it.viewOn) it.pushBytes(jpeg) } } } catch (e: Exception) {}
-                }
-                // Android allows a screenshot about every third of a second
-                val wait = if (jpeg == null) 800L else maxOf(0L, 420L - (SystemClock.uptimeMillis() - t0))
-                main.postDelayed(this, wait)
-            }
-        }
-    }
-
     // ---- live preview of the focused field, sent to the iPhone ----------------
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
@@ -201,10 +195,20 @@ class KeyboardService : InputMethodService() {
         schedulePreview()
     }
 
+    private var previewFirstAt = 0L
+    private val previewRun = Runnable { previewQueued = false; previewFirstAt = 0L; sendPreview() }
+
+    /**
+     * The preview reads the focused field over binder, which can block the main thread. So wait until typing
+     * pauses (120 ms) and, while typing continuously, read at most every 400 ms.
+     */
     private fun schedulePreview() {
-        if (previewQueued || peers.isEmpty()) return
+        if (peers.isEmpty()) return
+        val now = SystemClock.uptimeMillis()
+        if (!previewQueued) previewFirstAt = now
         previewQueued = true
-        main.postDelayed({ previewQueued = false; sendPreview() }, 80)
+        main.removeCallbacks(previewRun)
+        main.postDelayed(previewRun, minOf(120L, maxOf(0L, previewFirstAt + 400L - now)))
     }
 
     private fun sendPreview() {
@@ -292,7 +296,8 @@ class KeyboardService : InputMethodService() {
 
     private inner class KbServer(port: Int) : NanoWSD(port) {
 
-        override fun openWebSocket(handshake: NanoHTTPD.IHTTPSession): NanoWSD.WebSocket = Client(handshake)
+        override fun openWebSocket(handshake: NanoHTTPD.IHTTPSession): NanoWSD.WebSocket =
+            if (handshake.uri == "/video") VideoClient(handshake) else Client(handshake)
 
         override fun serveHttp(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response = when (session.uri) {
             "/", "/index.html" -> asset("keyboard.html", "text/html; charset=utf-8")
@@ -315,12 +320,68 @@ class KeyboardService : InputMethodService() {
         }
     }
 
+    /** Its own connection, so heavy video never queues behind (or in front of) key presses. */
+    private inner class VideoClient(handshake: NanoHTTPD.IHTTPSession) : NanoWSD.WebSocket(handshake), Sink {
+        @Volatile override var w = 480
+        @Volatile override var q = 45
+        @Volatile override var fps = 8
+        private val sending = java.util.concurrent.atomic.AtomicBoolean(false)
+        @Volatile private var live = false
+        private val pin = handshake.parameters["pin"]?.firstOrNull() ?: ""
+
+        init {
+            handshake.parameters["w"]?.firstOrNull()?.toIntOrNull()?.let { w = it }
+            handshake.parameters["q"]?.firstOrNull()?.toIntOrNull()?.let { q = it }
+            handshake.parameters["fps"]?.firstOrNull()?.toIntOrNull()?.let { fps = it }
+        }
+
+        override fun onOpen() {
+            val now = SystemClock.elapsedRealtime()
+            val ok = now >= lockedUntil &&
+                MessageDigest.isEqual(pin.toByteArray(), Pin.get(this@KeyboardService).toByteArray())
+            if (!ok) {
+                if (now >= lockedUntil && ++failures >= 5) { failures = 0; lockedUntil = now + 60_000 }
+                try { close(NanoWSD.WebSocketFrame.CloseCode.PolicyViolation, "pin", false) } catch (e: IOException) {}
+                return
+            }
+            failures = 0
+            live = true
+            Video.add(this)
+        }
+
+        override fun onClose(code: NanoWSD.WebSocketFrame.CloseCode?, reason: String?, initiatedByRemote: Boolean) {
+            if (live) { live = false; Video.remove(this) }
+        }
+
+        override fun onMessage(message: NanoWSD.WebSocketFrame) {
+            if (!live) return
+            // the page changes quality when you zoom in or out: {"w":..,"q":..,"fps":..}
+            try {
+                val m = JSONObject(message.textPayload)
+                w = m.optInt("w", w).coerceIn(320, 1280)
+                q = m.optInt("q", q).coerceIn(30, 85)
+                fps = m.optInt("fps", fps).coerceIn(1, 30)
+                Video.refresh()
+            } catch (e: Exception) { /* ignore */ }
+        }
+
+        /** Never blocks and never queues: if the phone is still receiving the last frame, this one is dropped. */
+        override fun offer(jpeg: ByteArray) {
+            if (!live || !sending.compareAndSet(false, true)) return
+            try {
+                videoSender.execute {
+                    try { send(jpeg) } catch (e: IOException) { live = false } finally { sending.set(false) }
+                }
+            } catch (e: Exception) { sending.set(false) }
+        }
+
+        override fun onPong(pong: NanoWSD.WebSocketFrame?) {}
+        override fun onException(exception: IOException?) {}
+    }
+
     private inner class Client(handshake: NanoHTTPD.IHTTPSession) : NanoWSD.WebSocket(handshake) {
         @Volatile private var authed = false
         @Volatile var wantsPreview = true
-        @Volatile var viewOn = false
-        @Volatile var viewW = 720
-        @Volatile var viewQ = 55
 
         override fun onOpen() {}
 
@@ -338,12 +399,6 @@ class KeyboardService : InputMethodService() {
             val msg = try { JSONObject(message.textPayload) } catch (e: Exception) { return }
             when (msg.optString("t")) {
                 "ping" -> { main.post { CursorService.instance?.touchAlive() }; reply("""{"t":"pong","ts":${msg.optLong("ts")}}""") }
-                "view" -> if (authed) {
-                    viewOn = msg.optBoolean("on", false)
-                    viewW = msg.optInt("w", 720).coerceIn(320, 1280)
-                    viewQ = msg.optInt("q", 55).coerceIn(30, 85)
-                    if (viewOn) main.post { startViewLoop() }
-                }
                 "pv" -> if (authed) {
                     wantsPreview = msg.optBoolean("on", true)
                     if (wantsPreview) main.post { schedulePreview() }
@@ -385,9 +440,6 @@ class KeyboardService : InputMethodService() {
 
         fun push(json: String) = reply(json)
 
-        fun pushBytes(bytes: ByteArray) {
-            try { send(bytes) } catch (e: IOException) { /* client gone */ }
-        }
 
         private fun reply(json: String) {
             try { send(json) } catch (e: IOException) { /* client gone */ }

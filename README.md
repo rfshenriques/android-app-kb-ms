@@ -71,10 +71,20 @@ depends on how the recent-apps screen is laid out on your tablet.
 Settings, **Live tablet screen**: On shows a small live view of the tablet in the corner of the trackpad.
 - Tap it to **zoom**: the keyboard hides and only the trackpad stays next to the big screen view.
 - When you tap a text field on the tablet (it gets keyboard focus), the view **zooms out by itself** and the keyboard returns.
-- Tap the zoomed view again to shrink it. Quality Low/Medium/High trades sharpness for speed.
-- It needs the mouse (Accessibility) service, because Android lets that service take screenshots. About two frames per second
-  (Android's limit for screenshots). Apps that block screenshots (some banking apps, DRM video) show as black.
-- Only an iPhone that entered the PIN gets frames, over your local network (not encrypted). Frames are sent only while the page is open.
+- Tap the zoomed view again to shrink it. Quality Low/Medium/High (480/720/1000 px, 12/18/24 fps).
+
+**Smooth mode (screen recording).** In the Android app, step 6, tap **Allow screen sharing** and accept Android's prompt.
+Then the view is a real stream instead of two screenshots per second. Android asks again after a reboot or after you stop it
+(the notification has a Stop button). Without it, the view still works at about two frames per second using the mouse service.
+
+**Built so it does not slow typing or the trackpad:**
+- Video has its own connection, separate from key presses and pointer moves, and its own low-priority thread on the tablet.
+- Nothing runs unless the iPhone page is open with the live view on. When the screen is still, no frames are produced.
+- If the phone is behind, frames are dropped instead of queued, and the phone decodes off the main thread and shows only the newest.
+- The small view asks for 480 px at 8 fps; full quality is used only while zoomed.
+- Input connections run at display priority, and the text preview waits until you pause typing.
+- Apps that block screenshots (some banking apps, DRM video) show as black.
+- Only an iPhone that entered the PIN gets frames, over your local network (not encrypted).
 
 ## Navigation buttons and typing preview (iPhone top bar)
 - Four buttons: **Home**, **Open apps** (recents), **Notifications** and **Quick settings** (Android's control centre).

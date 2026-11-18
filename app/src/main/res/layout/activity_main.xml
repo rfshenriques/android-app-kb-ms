@@ -64,6 +64,15 @@
         </LinearLayout>
     </LinearLayout>
 
+
+    <LinearLayout style="@style/Card">
+        <TextView android:id="@+id/badge6" style="@style/Badge" android:text="6" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/title6" style="@style/CardTitle" android:text="Smooth live screen (optional)" />
+            <TextView android:id="@+id/desc6" style="@style/CardDesc" android:text="Lets your iPhone show this screen live and smoothly. Android asks for permission each time you start it (and after a reboot). It only runs while the iPhone has the live view on, in the background, so typing and the trackpad stay fast." />
+            <TextView android:id="@+id/btn6" style="@style/Btn" android:text="Allow screen sharing" />
+        </LinearLayout>
+    </LinearLayout>
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginTop="14dp" android:textColor="@color/muted" android:textSize="13sp"
         android:text="Tip: add the Remote Keyboard widget (long-press the home screen, Widgets) to start everything and see the PIN in one tap." />

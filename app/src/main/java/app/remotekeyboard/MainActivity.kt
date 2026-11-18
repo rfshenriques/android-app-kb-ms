@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -47,7 +48,28 @@ class MainActivity : Activity() {
         tv(R.id.btnCmd).setOnClickListener {
             copy("adb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS"); toast("Command copied")
         }
+        tv(R.id.btn6).setOnClickListener {
+            val sharing = ScreenCaptureService.instance?.ready == true
+            if (sharing) {
+                startService(Intent(this, ScreenCaptureService::class.java).setAction(ScreenCaptureService.ACTION_STOP))
+            } else {
+                val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                startActivityForResult(mpm.createScreenCaptureIntent(), 7)
+            }
+        }
         tv(R.id.desc5).text = tv(R.id.desc5).text.toString().replace("PKG", packageName)
+    }
+
+    @Deprecated("kept simple")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 7 && resultCode == RESULT_OK && data != null) {
+            startForegroundService(
+                Intent(this, ScreenCaptureService::class.java).putExtra("code", resultCode).putExtra("data", data)
+            )
+        } else if (requestCode == 7) {
+            toast("Screen sharing was not allowed")
+        }
     }
 
     override fun onResume() { super.onResume(); handler.post(tick) }
@@ -72,6 +94,9 @@ class MainActivity : Activity() {
         badge(3, s.mouse, R.id.badge3)
         badge(4, s.clients > 0, R.id.badge4)
         badge(5, s.canSwitch, R.id.badge5)
+        val sharing = ScreenCaptureService.instance?.ready == true
+        badge(6, sharing, R.id.badge6)
+        tv(R.id.btn6).text = if (sharing) "Stop screen sharing" else "Allow screen sharing"
 
         tv(R.id.btn2).text = if (s.selected) "Remote Keyboard is active" else "Choose keyboard"
         tv(R.id.btn3).text = if (s.mouse) "Mouse is on" else "Open accessibility settings"

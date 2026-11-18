@@ -188,7 +188,7 @@
       <div id="padStrip">&#x2195;</div>
     </div>
     <div id="kb"></div>
-    <div id="screenBox"><img id="screenImg" alt=""><div id="screenHint">Waiting for the tablet screen. It needs the mouse service on.</div></div>
+    <div id="screenBox"><canvas id="screenImg"></canvas><div id="screenHint">Waiting for the tablet screen. It needs the mouse service on.</div></div>
   </div>
 
   <div id="xrow"></div>
@@ -369,7 +369,7 @@
     };
     mine.onclose = () => {
       if (ws !== mine) return;
-      authed = false;
+      authed = false; sendView();
       if (!pinBad) { setState('wait', 'Reconnecting…'); scheduleRetry(); }
     };
     mine.onerror = () => {};
@@ -603,30 +603,60 @@
   }));
 
   // ---------- live tablet screen ----------
-  const box = $('screenBox'), img = $('screenImg');
-  let zoomed = false, imgAspect = 0.62, lastUrl = null, prevFocused = false, flashT = null;
-  const SQ = { l: [480, 45], m: [720, 55], h: [1000, 65] };            // width px, JPEG quality
+  const box = $('screenBox'), cv = $('screenImg'), cx = cv.getContext('2d');
+  let zoomed = false, imgAspect = 0.62, prevFocused = false, flashT = null;
+  // [width px, JPEG quality, frames per second]. The small view asks for less, so the page stays light while you type.
+  const SQ = { l: [480, 45, 12], m: [720, 55, 18], h: [1000, 65, 24] };
+  const MINI = [480, 45, 8];
 
   function flashState(t) { setState('ok', t); clearTimeout(flashT); flashT = setTimeout(refreshState, 900); }
 
-  function sendView() {
-    if (!authed) return;
-    const q = SQ[S.sq] || SQ.m;
-    send({ t: 'view', on: !!S.screen && document.visibilityState === 'visible', w: q[0], q: q[1] });
+  // The video has its own connection, so frames never queue in front of key presses or pointer moves.
+  let vws = null, vwant = false, vretry = null;
+  const vparams = () => (zoomed ? (SQ[S.sq] || SQ.m) : MINI);
+  function vurl() {
+    const p = vparams();
+    return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host +
+      '/video?pin=' + encodeURIComponent(pin) + '&w=' + p[0] + '&q=' + p[1] + '&fps=' + p[2];
+  }
+  function openVideo() {
+    if (vws && vws.readyState <= 1) return;
+    clearTimeout(vretry);
+    let w; try { w = new WebSocket(vurl()); } catch (e) { return; }
+    w.binaryType = 'arraybuffer';
+    w.onmessage = ev => { if (typeof ev.data !== 'string') showFrame(ev.data); };
+    w.onclose = () => { if (vws === w) { vws = null; if (vwant) vretry = setTimeout(openVideo, 1500); } };
+    w.onerror = () => {};
+    vws = w;
+  }
+  function closeVideo() { clearTimeout(vretry); const w = vws; vws = null; if (w) { try { w.close(); } catch (e) {} } }
+  function sendView() {                       // called when the connection, the settings or the zoom change
+    vwant = authed && !!S.screen && document.visibilityState === 'visible';
+    if (!vwant) { closeVideo(); return; }
+    if (!vws) openVideo();
+    else if (vws.readyState === 1) { const p = vparams(); vws.send(JSON.stringify({ w: p[0], q: p[1], fps: p[2] })); }
   }
   document.addEventListener('visibilitychange', sendView);
 
-  function showFrame(data) {
-    const url = URL.createObjectURL(new Blob([data], { type: 'image/jpeg' }));
-    img.onload = () => {
-      if (lastUrl) URL.revokeObjectURL(lastUrl);
-      lastUrl = url;
-      const a = img.naturalHeight / img.naturalWidth;
-      if (a && Math.abs(a - imgAspect) > 0.01) { imgAspect = a; placeMini(); }
-      $('screenHint').style.display = 'none';
-    };
-    img.onerror = () => URL.revokeObjectURL(url);
-    img.src = url;
+  // decode off the main thread and keep only the newest frame: a slow phone drops frames instead of lagging
+  let pending = null, decoding = false;
+  function showFrame(buf) { pending = buf; if (!decoding) pumpFrames(); }
+  async function pumpFrames() {
+    decoding = true;
+    while (pending) {
+      const b = pending; pending = null;
+      try {
+        const bmp = await createImageBitmap(new Blob([b], { type: 'image/jpeg' }));
+        if (cv.width !== bmp.width || cv.height !== bmp.height) {
+          cv.width = bmp.width; cv.height = bmp.height;
+          const a = bmp.height / bmp.width;
+          if (Math.abs(a - imgAspect) > 0.01) { imgAspect = a; placeMini(); }
+        }
+        cx.drawImage(bmp, 0, 0); bmp.close();
+        $('screenHint').style.display = 'none';
+      } catch (e) { /* skip a bad frame */ }
+    }
+    decoding = false;
   }
 
   // small view: floats in the top-right corner of the trackpad
@@ -642,6 +672,7 @@
     zoomed = !!z && !!S.screen;
     document.body.classList.toggle('zoomed', zoomed);
     if (zoomed) { box.style.width = box.style.height = box.style.left = box.style.top = ''; } else placeMini();
+    sendView();                                  // zoomed = full quality, small view = light
   }
   onTap(box, () => setZoom(!zoomed));                                   // tap the small view to zoom, tap again to shrink
   window.addEventListener('resize', placeMini);
