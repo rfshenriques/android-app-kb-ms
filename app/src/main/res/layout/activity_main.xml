@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:fillViewport="true" android:background="@color/bg">
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="vertical" android:padding="18dp">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center_vertical" android:orientation="horizontal" android:layout_marginBottom="6dp">
+        <ImageView android:layout_width="52dp" android:layout_height="52dp" android:src="@mipmap/ic_launcher" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="14dp" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Remote Keyboard" android:textColor="@color/text" android:textSize="22sp" android:textStyle="bold" />
+            <TextView android:id="@+id/summary" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="@color/muted" android:textSize="14sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/Card">
+        <TextView android:id="@+id/badge1" style="@style/Badge" android:text="1" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/title1" style="@style/CardTitle" android:text="Enable the keyboard" />
+            <TextView android:id="@+id/desc1" style="@style/CardDesc" android:text="Turn on &quot;Remote Keyboard (iPhone)&quot; in the keyboard list." />
+            <TextView android:id="@+id/btn1" style="@style/Btn" android:text="Open keyboard settings" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout style="@style/Card">
+        <TextView android:id="@+id/badge2" style="@style/Badge" android:text="2" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/title2" style="@style/CardTitle" android:text="Choose it as your active keyboard" />
+            <TextView android:id="@+id/desc2" style="@style/CardDesc" android:text="Tap the button and pick &quot;Remote Keyboard (iPhone)&quot; in the popup. It must stay selected: the connection only runs while it is the active keyboard." />
+            <TextView android:id="@+id/btn2" style="@style/Btn" android:text="Choose keyboard" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout style="@style/Card">
+        <TextView android:id="@+id/badge3" style="@style/Badge" android:text="3" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/title3" style="@style/CardTitle" android:text="Enable the mouse (optional)" />
+            <TextView android:id="@+id/desc3" style="@style/CardDesc" android:text="Needed for the trackpad. Turn on &quot;Remote Keyboard mouse&quot; in Accessibility. If it is greyed out on Android 13+: App info, menu (three dots), Allow restricted settings." />
+            <TextView android:id="@+id/btn3" style="@style/Btn" android:text="Open accessibility settings" />
+            <TextView android:id="@+id/btn3b" style="@style/Btn2" android:text="Open app info" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout style="@style/Card">
+        <TextView android:id="@+id/badge4" style="@style/Badge" android:text="4" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/title4" style="@style/CardTitle" android:text="Connect your iPhone" />
+            <TextView android:id="@+id/desc4" style="@style/CardDesc" android:text="On the iPhone open this address in Safari, enter the PIN, then Share, Add to Home Screen." />
+            <TextView android:id="@+id/addr" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="10dp" android:textColor="@color/text" android:textSize="15sp" android:textIsSelectable="true" />
+            <TextView android:id="@+id/pin" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:letterSpacing="0.15" android:textColor="@color/accent" android:textSize="34sp" android:textStyle="bold" />
+            <TextView android:id="@+id/btnCopy" style="@style/Btn" android:text="Copy address" />
+            <TextView android:id="@+id/btnPin" style="@style/Btn2" android:text="New PIN" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout style="@style/Card">
+        <TextView android:id="@+id/badge5" style="@style/Badge" android:text="5" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/title5" style="@style/CardTitle" android:text="One-tap switching (optional, needs a PC once)" />
+            <TextView android:id="@+id/desc5" style="@style/CardDesc" android:text="Lets the home-screen widget switch keyboards without the popup. On a PC with the tablet connected by USB, run:\n\nadb shell pm grant PKG android.permission.WRITE_SECURE_SETTINGS" />
+            <TextView android:id="@+id/btnCmd" style="@style/Btn2" android:text="Copy command" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="14dp" android:textColor="@color/muted" android:textSize="13sp"
+        android:text="Tip: add the Remote Keyboard widget (long-press the home screen, Widgets) to start everything and see the PIN in one tap." />
+</LinearLayout>
+</ScrollView>

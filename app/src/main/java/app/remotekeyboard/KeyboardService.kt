@@ -30,7 +30,11 @@ class KeyboardService : InputMethodService() {
     private val main = Handler(Looper.getMainLooper())
     private var server: KbServer? = null
     private var statusView: TextView? = null
-    private val clients = AtomicInteger(0)
+
+    companion object {
+        @Volatile var running = false
+        val clients = AtomicInteger(0)
+    }
 
     // brute-force protection for the PIN
     @Volatile private var failures = 0
@@ -43,12 +47,16 @@ class KeyboardService : InputMethodService() {
         } catch (e: IOException) {
             server = null
         }
+        running = server != null
         refreshStatus()
     }
 
     override fun onDestroy() {
         server?.stop()
         server = null
+        running = false
+        clients.set(0)
+        Setup.refreshWidgets(this)
         super.onDestroy()
     }
 
@@ -62,11 +70,15 @@ class KeyboardService : InputMethodService() {
         val dp = resources.displayMetrics.density
         val text = TextView(this).apply {
             textSize = 14f
-            setPadding((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), (8 * dp).toInt())
+            setTextColor(0xFFE8EAF0.toInt())
+            setPadding((14 * dp).toInt(), (10 * dp).toInt(), (12 * dp).toInt(), (10 * dp).toInt())
         }
         statusView = text
         val switchBtn = Button(this).apply {
             this.text = "Switch keyboard"
+            isAllCaps = false
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundResource(R.drawable.bg_btn)
             setOnClickListener {
                 (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
             }
@@ -75,7 +87,8 @@ class KeyboardService : InputMethodService() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(0xFFEEEEEE.toInt())
+            setBackgroundColor(0xFF1A1D24.toInt())
+            setPadding(0, 0, (10 * dp).toInt(), 0)
             addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(switchBtn)
         }
@@ -89,6 +102,7 @@ class KeyboardService : InputMethodService() {
             val state = if (server == null) "server failed to start" else "${clients.get()} connected"
             val mouse = if (CursorService.instance != null) "mouse on" else "mouse off"
             statusView?.text = "Remote keyboard: $state, $mouse\nOpen on iPhone: $where   PIN: ${Pin.get(this)}"
+            Setup.refreshWidgets(this)
         }
     }
 

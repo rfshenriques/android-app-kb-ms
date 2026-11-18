@@ -76,6 +76,7 @@ class CursorService : AccessibilityService() {
         y = screenH / 2f
         vx = x; vy = y
         instance = this
+        Setup.refreshWidgets(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
@@ -84,6 +85,7 @@ class CursorService : AccessibilityService() {
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         hideCursor()
         instance = null
+        Setup.refreshWidgets(this)
         return super.onUnbind(intent)
     }
 

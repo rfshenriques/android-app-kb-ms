@@ -1,71 +1,96 @@
 package app.remotekeyboard
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
-import android.view.inputmethod.InputMethodManager
-import android.widget.Button
-import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 
-/** Setup screen: enable the keyboard, select it, and see the address + PIN. */
+/** Guided setup: each step shows a check mark when it is done. Refreshes every second. */
 class MainActivity : Activity() {
 
-    private lateinit var info: TextView
+    private val handler = Handler(Looper.getMainLooper())
+    private val tick = object : Runnable {
+        override fun run() { refresh(); handler.postDelayed(this, 1000) }
+    }
+
+    private fun tv(id: Int) = findViewById<TextView>(id)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val dp = resources.displayMetrics.density
-        val pad = (20 * dp).toInt()
+        setContentView(R.layout.activity_main)
 
-        info = TextView(this).apply { textSize = 18f; setPadding(0, pad, 0, pad) }
-
-        fun button(label: String, onClick: () -> Unit) = Button(this).apply {
-            text = label
-            setOnClickListener { onClick() }
+        tv(R.id.btn1).setOnClickListener { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }
+        tv(R.id.btn2).setOnClickListener {
+            if (!Setup.read(this).enabled) {
+                toast("Do step 1 first: enable the keyboard")
+            } else if (!Setup.activate(this)) {
+                Setup.imm(this).showInputMethodPicker()
+            }
         }
-
-        val intro = TextView(this).apply {
-            textSize = 16f
-            text = "1. Enable \"Remote Keyboard\" in the keyboard list.\n" +
-                "2. Tap a text field, then choose it as the active keyboard.\n" +
-                "3. For the trackpad/mouse, enable the \"Remote Keyboard mouse\" accessibility service.\n" +
-                "   (Android 13+: if it is greyed out, open App info > menu > Allow restricted settings first.)\n" +
-                "4. On the iPhone, open the address below in Safari and Add to Home Screen."
+        tv(R.id.btn3).setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        tv(R.id.btn3b).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
         }
-
-        setContentView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
-            addView(intro)
-            addView(button("1. Enable keyboard") {
-                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
-            })
-            addView(button("2. Choose keyboard") {
-                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
-            })
-            addView(button("3. Enable mouse (accessibility)") {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            })
-            addView(info)
-            addView(button("New PIN") {
-                Pin.regenerate(this@MainActivity)
-                refresh()
-            })
-        })
+        tv(R.id.btnCopy).setOnClickListener {
+            val a = Net.addresses().firstOrNull()
+            if (a == null) toast("No network found") else { copy("http://$a:$PORT"); toast("Address copied") }
+        }
+        tv(R.id.btnPin).setOnClickListener { Pin.regenerate(this); refresh(); Setup.refreshWidgets(this) }
+        tv(R.id.btnCmd).setOnClickListener {
+            copy("adb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS"); toast("Command copied")
+        }
+        tv(R.id.desc5).text = tv(R.id.desc5).text.toString().replace("PKG", packageName)
     }
 
-    override fun onResume() {
-        super.onResume()
-        refresh()
+    override fun onResume() { super.onResume(); handler.post(tick) }
+    override fun onPause() { handler.removeCallbacks(tick); super.onPause() }
+
+    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
+    private fun copy(text: String) {
+        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+            .setPrimaryClip(ClipData.newPlainText("Remote Keyboard", text))
+    }
+
+    private fun badge(n: Int, done: Boolean, id: Int) {
+        val b = tv(id)
+        b.text = if (done) "✓" else "$n"
+        b.setBackgroundResource(if (done) R.drawable.badge_ok else R.drawable.badge_off)
     }
 
     private fun refresh() {
-        val ips = Net.addresses()
-        val addr = if (ips.isEmpty()) "No network found. Join Wi-Fi or turn on a hotspot."
-        else ips.joinToString("\n") { "http://$it:$PORT" }
-        val mouse = if (CursorService.instance != null) "on" else "off (enable it for the trackpad)"
-        info.text = "Address (iPhone):\n$addr\n\nPIN: ${Pin.get(this)}\nMouse service: $mouse"
+        val s = Setup.read(this)
+        badge(1, s.enabled, R.id.badge1)
+        badge(2, s.selected, R.id.badge2)
+        badge(3, s.mouse, R.id.badge3)
+        badge(4, s.clients > 0, R.id.badge4)
+        badge(5, s.canSwitch, R.id.badge5)
+
+        tv(R.id.btn2).text = if (s.selected) "Remote Keyboard is active" else "Choose keyboard"
+        tv(R.id.btn3).text = if (s.mouse) "Mouse is on" else "Open accessibility settings"
+        tv(R.id.title3).text = if (s.mouse) "Mouse is on" else "Enable the mouse (optional)"
+
+        val addr = if (!s.server) "Finish steps 1 and 2 first (the server runs while the keyboard is active)"
+        else if (s.addresses.isEmpty()) "No network: join Wi-Fi or turn on a hotspot"
+        else s.addresses.joinToString("\n") { "http://$it:$PORT" }
+        tv(R.id.addr).text = addr
+        tv(R.id.pin).text = s.pin
+        tv(R.id.title4).text = if (s.clients > 0) "iPhone connected" else "Connect your iPhone"
+
+        val summary = when {
+            !s.enabled -> "Step 1: enable the keyboard"
+            !s.selected -> "Step 2: choose it as the active keyboard"
+            s.clients > 0 -> "iPhone connected"
+            else -> "Ready. Open the address on your iPhone"
+        }
+        tv(R.id.summary).text = summary
+        tv(R.id.summary).setTextColor(getColor(if (s.enabled && s.selected) R.color.ok else R.color.muted))
     }
 }
