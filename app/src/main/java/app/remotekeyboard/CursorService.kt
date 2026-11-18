@@ -3,6 +3,7 @@ package app.remotekeyboard
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -143,7 +144,9 @@ class CursorService : AccessibilityService() {
 
     /** Home / recent apps / notification shade / quick settings (Android's "control centre"). */
     fun nav(action: String) {
+        if (action == "closeapp") { closeApp(); return }
         val a = when (action) {
+            "back" -> GLOBAL_ACTION_BACK
             "home" -> GLOBAL_ACTION_HOME
             "recents" -> GLOBAL_ACTION_RECENTS
             "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
@@ -152,6 +155,58 @@ class CursorService : AccessibilityService() {
             else -> return
         }
         performGlobalAction(a)
+    }
+
+    /** Close the app on screen like swiping its card up in the recent-apps view. */
+    fun closeApp() {
+        performGlobalAction(GLOBAL_ACTION_RECENTS)
+        main.postDelayed({
+            updateScreen()
+            val path = Path().apply { moveTo(screenW / 2f, screenH * 0.55f); lineTo(screenW / 2f, screenH * 0.06f) }
+            dispatchGesture(
+                GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 220)).build(),
+                null, null
+            )
+        }, 750)
+    }
+
+    // ---- live screen for the iPhone ------------------------------------------------
+
+    private val shotExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /** One JPEG of the tablet screen, scaled to [width] px wide. Calls back with null on failure. */
+    fun capture(width: Int, quality: Int, cb: (ByteArray?) -> Unit) {
+        if (Build.VERSION.SDK_INT < 30) { cb(null); return }
+        try {
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, shotExecutor, object : TakeScreenshotCallback {
+                override fun onSuccess(result: ScreenshotResult) {
+                    var out: ByteArray? = null
+                    try {
+                        val hb = result.hardwareBuffer
+                        val hw = Bitmap.wrapHardwareBuffer(hb, result.colorSpace)
+                        if (hw != null) {
+                            val soft = hw.copy(Bitmap.Config.ARGB_8888, false)
+                            hw.recycle()
+                            val h = (soft.height * width.toFloat() / soft.width).toInt().coerceAtLeast(1)
+                            val small = Bitmap.createScaledBitmap(soft, width, h, true)
+                            val bos = java.io.ByteArrayOutputStream()
+                            small.compress(Bitmap.CompressFormat.JPEG, quality, bos)
+                            out = bos.toByteArray()
+                            if (small !== soft) small.recycle()
+                            soft.recycle()
+                        }
+                        hb.close()
+                    } catch (e: Exception) {
+                        out = null
+                    }
+                    cb(out)
+                }
+
+                override fun onFailure(errorCode: Int) { cb(null) }
+            })
+        } catch (e: Exception) {
+            cb(null)
+        }
     }
 
     fun rightClick() {

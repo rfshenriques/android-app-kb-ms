@@ -158,6 +158,34 @@ class KeyboardService : InputMethodService() {
         schedulePreview()
     }
 
+    // ---- live view of the tablet screen, sent to the iPhone as JPEG frames -------------
+
+    private var viewLoop = false
+
+    private fun startViewLoop() {
+        if (viewLoop) return
+        viewLoop = true
+        main.post(viewTick)
+    }
+
+    private val viewTick = object : Runnable {
+        override fun run() {
+            val viewers = peers.filter { it.viewOn }
+            if (viewers.isEmpty()) { viewLoop = false; return }
+            val svc = CursorService.instance
+            if (svc == null) { main.postDelayed(this, 1500); return }          // mouse service off: nothing to capture with
+            val t0 = SystemClock.uptimeMillis()
+            svc.capture(viewers.maxOf { it.viewW }, viewers.maxOf { it.viewQ }) { jpeg ->
+                if (jpeg != null) {
+                    try { sender.execute { peers.forEach { if (it.viewOn) it.pushBytes(jpeg) } } } catch (e: Exception) {}
+                }
+                // Android allows a screenshot about every third of a second
+                val wait = if (jpeg == null) 800L else maxOf(0L, 420L - (SystemClock.uptimeMillis() - t0))
+                main.postDelayed(this, wait)
+            }
+        }
+    }
+
     // ---- live preview of the focused field, sent to the iPhone ----------------
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
@@ -290,6 +318,9 @@ class KeyboardService : InputMethodService() {
     private inner class Client(handshake: NanoHTTPD.IHTTPSession) : NanoWSD.WebSocket(handshake) {
         @Volatile private var authed = false
         @Volatile var wantsPreview = true
+        @Volatile var viewOn = false
+        @Volatile var viewW = 720
+        @Volatile var viewQ = 55
 
         override fun onOpen() {}
 
@@ -307,6 +338,12 @@ class KeyboardService : InputMethodService() {
             val msg = try { JSONObject(message.textPayload) } catch (e: Exception) { return }
             when (msg.optString("t")) {
                 "ping" -> { main.post { CursorService.instance?.touchAlive() }; reply("""{"t":"pong","ts":${msg.optLong("ts")}}""") }
+                "view" -> if (authed) {
+                    viewOn = msg.optBoolean("on", false)
+                    viewW = msg.optInt("w", 720).coerceIn(320, 1280)
+                    viewQ = msg.optInt("q", 55).coerceIn(30, 85)
+                    if (viewOn) main.post { startViewLoop() }
+                }
                 "pv" -> if (authed) {
                     wantsPreview = msg.optBoolean("on", true)
                     if (wantsPreview) main.post { schedulePreview() }
@@ -347,6 +384,10 @@ class KeyboardService : InputMethodService() {
         }
 
         fun push(json: String) = reply(json)
+
+        fun pushBytes(bytes: ByteArray) {
+            try { send(bytes) } catch (e: IOException) { /* client gone */ }
+        }
 
         private fun reply(json: String) {
             try { send(json) } catch (e: IOException) { /* client gone */ }

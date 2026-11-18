@@ -62,6 +62,20 @@ the keyboard popup and you tap Remote Keyboard once. To make it fully one-tap, r
 Settings, **Scroll strip in the trackpad**: Off, Left or Right, with an adjustable width. Dragging one finger up or
 down inside the strip scrolls the tablet precisely, with no need for two fingers. Natural scrolling applies to it too.
 
+## 3-finger gestures
+On the trackpad: **3 fingers swipe up = close the current app** (opens recent apps and swipes its card away),
+**3 fingers swipe right = Back**. Turn off in Settings, 3-finger gestures. Closing an app is best-effort: it
+depends on how the recent-apps screen is laid out on your tablet.
+
+## Live tablet screen
+Settings, **Live tablet screen**: On shows a small live view of the tablet in the corner of the trackpad.
+- Tap it to **zoom**: the keyboard hides and only the trackpad stays next to the big screen view.
+- When you tap a text field on the tablet (it gets keyboard focus), the view **zooms out by itself** and the keyboard returns.
+- Tap the zoomed view again to shrink it. Quality Low/Medium/High trades sharpness for speed.
+- It needs the mouse (Accessibility) service, because Android lets that service take screenshots. About two frames per second
+  (Android's limit for screenshots). Apps that block screenshots (some banking apps, DRM video) show as black.
+- Only an iPhone that entered the PIN gets frames, over your local network (not encrypted). Frames are sent only while the page is open.
+
 ## Navigation buttons and typing preview (iPhone top bar)
 - Four buttons: **Home**, **Open apps** (recents), **Notifications** and **Quick settings** (Android's control centre).
   Tap Notifications, Quick settings or Open apps a second time to close it (sends Back). The page cannot see the
