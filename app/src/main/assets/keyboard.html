@@ -56,16 +56,44 @@
   body.kbhide #kb { display: none; }
 
   body.kbopen { padding-bottom: 0; }
+  #nav button.on { background: var(--accent); color: #fff; }
+
+  /* scroll strip inside the trackpad */
+  #padStrip { display: none; flex: 0 0 18%; min-width: 0; border-radius: 10px; align-items: center; justify-content: center;
+    background: repeating-linear-gradient(0deg, #1b1f27 0 10px, #20252e 10px 20px); border: 1px solid #2a2f3a;
+    color: #3a4150; font-size: 22px; touch-action: none; }
+  #padStrip.act { border-color: var(--accent); color: var(--accent); }
+
+  /* iOS-style keyboard: the whole cell (including the gaps between keys) is the touch target */
+  #kb.ios { gap: 0; }
+  .krow { flex: 1 1 0; display: flex; min-height: 0; }
+  .krow.xr { flex: 0.62 1 0; }
+  .kcell { flex: 1 1 0; min-width: 0; display: flex; padding: 5px 3px; touch-action: none; }
+  .krow.xr .kcell { padding: 3px 2px; }
+  .kgap { flex: 0.5 1 0; }
+  .kv { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; border-radius: 7px;
+    background: #5b5b5f; color: #fff; font-size: clamp(18px, min(3.4vh, 6.2vw), 27px);
+    box-shadow: 0 1px 0 rgba(0,0,0,.55); }
+  .kv.fn { background: #3d3d41; color: #e6e6ea; font-size: clamp(12px, min(2.4vh, 4.2vw), 17px); }
+  .kv.space { font-size: 14px; color: #c7c7cc; }
+  .kv.accent { background: #3478f6; color: #fff; }
+  .kv.on { background: #e8e8ea; color: #111; }
+  .kcell.down .kv { background: #85858a; }
+  .kcell.down .kv.fn { background: #5c5c61; }
+  .kcell.down .kv.accent { background: #2a62cf; }
+  .kcell.down .kv[data-show]::after { content: attr(data-show); position: absolute; left: 50%; bottom: calc(100% + 4px);
+    transform: translateX(-50%); min-width: 140%; height: 115%; display: flex; align-items: center; justify-content: center;
+    background: #85858a; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,.55); font-size: 1.35em; z-index: 6; }
   #xrow { flex: none; display: none; gap: 5px; height: 46px; padding: 0 6px 6px; }
   body.native #xrow { display: flex; }
   body.pin #xrow { display: none; }
   #natToggle { background: var(--accent); color: #fff; font-size: 20px; }
   #nat { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0.01; border: 0; padding: 0;
     font-size: 16px; -webkit-user-select: text; user-select: text; pointer-events: none; }
-  #pad { display: flex; flex-direction: column; gap: 5px; min-width: 0; min-height: 0; flex: 0 1 auto; }
+  #pad { display: flex; flex-direction: row; gap: 6px; min-width: 0; min-height: 0; flex: 0 1 auto; }
   body.pos-off #pad { display: none; }
   body.kbhide #pad { flex: 1 1 0 !important; width: auto !important; height: auto !important; align-self: stretch !important; }
-  #padSurface { flex: 1; min-height: 0; border-radius: 10px; background: #181b22; border: 1px solid #2a2f3a;
+  #padSurface { flex: 1 1 0; min-width: 0; min-height: 0; border-radius: 10px; background: #181b22; border: 1px solid #2a2f3a;
     display: flex; align-items: center; justify-content: center; color: #3a4150; font-size: 13px; touch-action: none; }
   #padSurface.hold { background: #222c44; border-color: var(--accent); color: var(--accent); }
   .row { flex: 1; display: flex; gap: 5px; min-height: 0; }
@@ -142,6 +170,7 @@
   <div id="main">
     <div id="pad">
       <div id="padSurface">trackpad</div>
+      <div id="padStrip">&#x2195;</div>
     </div>
     <div id="kb"></div>
   </div>
@@ -163,7 +192,11 @@
         <div class="grp"><label>Keyboard (hide it for a full-screen trackpad)</label>
           <div class="seg" data-key="kb"><button data-v="true">Show</button><button data-v="false">Hide</button></div></div>
         <div class="grp"><label>Keyboard type (this orientation)</label>
-          <div class="seg" data-key="kbtype"><button data-v="custom">Custom</button><button data-v="native">iOS native</button></div></div>
+          <div class="seg" data-key="kbtype"><button data-v="custom">Desktop</button><button data-v="ios">iOS style</button><button data-v="native">iOS native</button></div></div>
+        <div class="grp"><label>Scroll strip in the trackpad</label>
+          <div class="seg" data-key="strip"><button data-v="off">Off</button><button data-v="left">Left</button><button data-v="right">Right</button></div></div>
+        <div class="grp"><label>Scroll strip width: <span id="swV"></span></label>
+          <input type="range" id="sw" min="10" max="40" step="1"></div>
         <div class="grp"><label>Trackpad width: <span id="pwV"></span></label>
           <input type="range" id="pw" min="15" max="100" step="1"></div>
         <div class="grp"><label>Trackpad height: <span id="phV"></span></label>
@@ -215,26 +248,28 @@
   // ---------- state ----------
   const mods = { shift: false, caps: false, ctrl: false, alt: false, meta: false };
   const modEls = [];
+  let layer = 'abc';      // iOS-style keyboard layer: abc, num (123) or sym (#+=)
+  let lastShiftTap = 0;
 
   // ---------- layouts: a separate saved config for landscape and portrait ----------
   // sizes are % of the keyboard area and are remembered per trackpad position
   const SIZE_DEF = {
     land: {
-      right: { pw: 24, ph: 72, kw: 100, kh: 72 }, left: { pw: 24, ph: 72, kw: 100, kh: 72 },
-      above: { pw: 60, ph: 34, kw: 100, kh: 66 }, below: { pw: 60, ph: 34, kw: 100, kh: 66 },
-      off:   { pw: 24, ph: 72, kw: 100, kh: 85 },
+      right: { pw: 24, ph: 72, kw: 100, kh: 72, sw: 18 }, left: { pw: 24, ph: 72, kw: 100, kh: 72, sw: 18 },
+      above: { pw: 60, ph: 34, kw: 100, kh: 66, sw: 18 }, below: { pw: 60, ph: 34, kw: 100, kh: 66, sw: 18 },
+      off:   { pw: 24, ph: 72, kw: 100, kh: 85, sw: 18 },
     },
     port: {
-      above: { pw: 100, ph: 36, kw: 100, kh: 60 }, below: { pw: 100, ph: 36, kw: 100, kh: 60 },
-      right: { pw: 30, ph: 60, kw: 100, kh: 60 },  left:  { pw: 30, ph: 60, kw: 100, kh: 60 },
-      off:   { pw: 24, ph: 72, kw: 100, kh: 56 },
+      above: { pw: 100, ph: 36, kw: 100, kh: 60, sw: 18 }, below: { pw: 100, ph: 36, kw: 100, kh: 60, sw: 18 },
+      right: { pw: 30, ph: 60, kw: 100, kh: 60, sw: 18 },  left:  { pw: 30, ph: 60, kw: 100, kh: 60, sw: 18 },
+      off:   { pw: 24, ph: 72, kw: 100, kh: 56, sw: 18 },
     },
   };
   const PAD_DEF = { land: 'right', port: 'above' };
-  const KBTYPE_DEF = { land: 'custom', port: 'native' };
+  const KBTYPE_DEF = { land: 'custom', port: 'ios' };
   const mkLayout = (o, saved) => {
     const L = { pad: (saved && saved.pad) || PAD_DEF[o], kb: !(saved && saved.kb === false),
-      kbtype: (saved && saved.kbtype) || KBTYPE_DEF[o], d: {} };
+      kbtype: (saved && saved.kbtype) || KBTYPE_DEF[o], strip: (saved && saved.strip) || 'off', d: {} };
     for (const p in SIZE_DEF[o]) L.d[p] = Object.assign({}, SIZE_DEF[o][p], (saved && saved.d && saved.d[p]) || {});
     return L;
   };
@@ -245,6 +280,7 @@
     const o = JSON.parse(localStorage.getItem('rk-settings') || '{}');
     for (const k in GLOBALS) if (k in o) S[k] = o[k];
     savedLayouts = o.layouts || (o.pad ? { land: { pad: o.pad, kb: o.kb, d: o.d } } : {});   // older single-layout format
+    if (o.ver !== 3 && savedLayouts.port) delete savedLayouts.port.kbtype;                     // new portrait default: iOS style
   } catch (e) {}
   S.layouts = { land: mkLayout('land', savedLayouts.land), port: mkLayout('port', savedLayouts.port) };
   const mq = window.matchMedia('(orientation: portrait)');
@@ -335,15 +371,32 @@
 
   // ---------- key handling ----------
   function renderMods() {
-    for (const { el, mod } of modEls) el.classList.toggle('on', mods[mod]);
+    for (const { el, mod, dbl } of modEls) {
+      el.classList.toggle('on', !!(mods[mod] || (dbl && mods.caps)));
+      if (dbl) el.textContent = mods.caps ? '\u21EA' : '\u21E7';
+    }
     document.querySelectorAll('.key[data-c]').forEach(el => {
       const up = (/[a-z]/.test(el.dataset.c)) ? (mods.shift !== mods.caps) : mods.shift;
       el.textContent = up ? el.dataset.s : el.dataset.c;
     });
+    document.querySelectorAll('.kv[data-c]').forEach(el => {            // iOS-style: only letters change case
+      const t = (/[a-z]/.test(el.dataset.c) && (mods.shift !== mods.caps)) ? el.dataset.s : el.dataset.c;
+      el.textContent = t; el.dataset.show = t;
+    });
   }
 
   function press(k) {
-    if (k.mod) { mods[k.mod] = !mods[k.mod]; renderMods(); return; }
+    if (k.layer) { layer = k.layer; buildKb(true); return; }
+    if (k.mod) {
+      if (k.dbl) {                                       // iOS shift: tap = next letter, double tap = caps lock
+        const now = Date.now();
+        if (mods.caps) { mods.caps = false; mods.shift = false; }
+        else if (mods.shift && now - lastShiftTap < 350) { mods.caps = true; mods.shift = false; }
+        else mods.shift = !mods.shift;
+        lastShiftTap = now;
+      } else mods[k.mod] = !mods[k.mod];
+      renderMods(); return;
+    }
 
     const m = [];
     if (mods.ctrl) m.push('ctrl');
@@ -397,13 +450,80 @@
     { toggle: true, label: '\u2328', w: 1.4, fn: true },
   ];
 
-  function build() {
-    const kb = $('kb');
-    for (const r of rows) {
-      const rowEl = document.createElement('div'); rowEl.className = 'row';
-      for (const k of r) rowEl.appendChild(mkKey(k, false));
-      kb.appendChild(rowEl);
+  // ----- iOS-style keyboard data -----
+  const I = (c, w) => ({ c, s: c, w: w || 1 });                                   // plain key
+  const IF = (sp, label, w, o) => Object.assign({ sp, label, w: w || 1, fn: true }, o); // special key
+  const IL = (to, label, w) => ({ layer: to, label, w: w || 1, fn: true });              // layer switch
+  const letters = str => [...str].map(c => ({ c, s: c.toUpperCase(), w: 1 }));
+  const chars = (str, w) => [...str].map(c => I(c, w));
+  const gap = w => ({ gap: true, w });
+  const SPACE = w => ({ c: ' ', space: true, label: 'space', w, rep: true });
+  const IOS = {
+    abc: [
+      letters('qwertyuiop'),
+      [gap(0.5), ...letters('asdfghjkl'), gap(0.5)],
+      [{ mod: 'shift', dbl: true, label: '⇧', w: 1.5, fn: true }, ...letters('zxcvbnm'), IF('BACKSPACE', '⌫', 1.5, { rep: true })],
+      [IL('num', '123', 1.5), SPACE(5), I('.', 1.1), IF('ENTER', 'return', 1.9, { accent: true })],
+    ],
+    num: [
+      chars('1234567890'),
+      chars('-/:;()€&@"'),
+      [IL('sym', '#+=', 1.5), ...chars('.,?!\'', 1.25), IF('BACKSPACE', '⌫', 1.5, { rep: true })],
+      [IL('abc', 'ABC', 1.5), SPACE(6), IF('ENTER', 'return', 1.9, { accent: true })],
+    ],
+    sym: [
+      chars('[]{}#%^*+='),
+      chars('_\\|~<>$£¥•'),
+      [IL('num', '123', 1.5), ...chars('.,?!\'', 1.25), IF('BACKSPACE', '⌫', 1.5, { rep: true })],
+      [IL('abc', 'ABC', 1.5), SPACE(6), IF('ENTER', 'return', 1.9, { accent: true })],
+    ],
+  };
+
+  function mkIosKey(k, keepFocus) {
+    const el = document.createElement('div');
+    if (k.gap) { el.className = 'kgap'; el.style.flexGrow = k.w; return el; }
+    el.className = 'kcell'; el.style.flexGrow = k.w;
+    const kv = document.createElement('div');
+    kv.className = 'kv' + (k.fn ? ' fn' : '') + (k.accent ? ' accent' : '') + (k.space ? ' space' : '');
+    if (k.c !== undefined && !k.space) { kv.dataset.c = k.c; kv.dataset.s = k.s || k.c; kv.dataset.show = k.c; kv.textContent = k.c; }
+    else kv.textContent = k.label;
+    el.appendChild(kv);
+    if (k.mod) modEls.push({ el: kv, mod: k.mod, dbl: k.dbl });
+    attach(el, k);
+    if (keepFocus) el.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+    return el;
+  }
+
+  let builtKey = '';
+  function pruneModEls() { for (let i = modEls.length - 1; i >= 0; i--) if (!modEls[i].el.isConnected) modEls.splice(i, 1); }
+  function buildKb(force) {
+    const ios = lay().kbtype === 'ios';
+    const key = ios ? 'ios:' + layer : 'desk';
+    if (!force && key === builtKey) return;
+    builtKey = key;
+    const kb = $('kb'); kb.textContent = '';
+    kb.classList.toggle('ios', ios);
+    if (ios) {
+      const xr = document.createElement('div'); xr.className = 'krow xr';     // function keys, outside the letter keys
+      for (const k of xrowKeys) if (!k.toggle) xr.appendChild(mkIosKey(k, true));
+      kb.appendChild(xr);
+      for (const r of IOS[layer]) {
+        const rowEl = document.createElement('div'); rowEl.className = 'krow';
+        for (const k of r) rowEl.appendChild(mkIosKey(k, false));
+        kb.appendChild(rowEl);
+      }
+    } else {
+      for (const r of rows) {
+        const rowEl = document.createElement('div'); rowEl.className = 'row';
+        for (const k of r) rowEl.appendChild(mkKey(k, false));
+        kb.appendChild(rowEl);
+      }
     }
+    pruneModEls();
+    renderMods();
+  }
+
+  function build() {                         // the row above the iOS native keyboard (built once)
     const xr = $('xrow');
     for (const k of xrowKeys) xr.appendChild(mkKey(k, true));
   }
@@ -446,8 +566,16 @@
   }
 
   // ---------- navigation buttons ----------
+  let navOpen = null, navTimer = null;
+  function setNavOpen(a) {
+    navOpen = a; clearTimeout(navTimer);
+    if (a) navTimer = setTimeout(() => setNavOpen(null), 45000);   // we cannot see the tablet: forget after a while
+    document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.nav === a));
+  }
   document.querySelectorAll('#nav button').forEach(btn => onTap(btn, () => {
-    send({ t: 'nav', a: btn.dataset.nav });
+    const a = btn.dataset.nav;
+    if (a !== 'home' && navOpen === a) { send({ t: 'nav', a: 'close' }); setNavOpen(null); }   // second tap closes it
+    else { send({ t: 'nav', a }); setNavOpen(a === 'home' ? null : a); }
     if (mouseOk === false) setState('wait', 'Enable the mouse service on the tablet for these buttons');
   }));
 
@@ -468,13 +596,18 @@
   }
 
   // ---------- settings ----------
-  const LAYKEYS = ['pad', 'kb', 'kbtype'];                       // per-orientation; everything else is global
+  const LAYKEYS = ['pad', 'kb', 'kbtype', 'strip'];                       // per-orientation; everything else is global
   const getKey = k => (LAYKEYS.includes(k) ? lay()[k] : S[k]);
 
   function layoutSizes() {
     const L = lay(), d = dims(), pad = $('pad'), kb = $('kb');
     const row = L.pad === 'left' || L.pad === 'right';
-    for (const k of ['pw', 'ph', 'kw', 'kh']) { $(k).value = d[k]; $(k + 'V').textContent = d[k] + '%'; }
+    for (const k of ['pw', 'ph', 'kw', 'kh', 'sw']) { $(k).value = d[k]; $(k + 'V').textContent = d[k] + '%'; }
+    const strip = $('padStrip');
+    strip.style.display = (L.strip === 'off' || L.pad === 'off') ? 'none' : 'flex';
+    strip.style.order = L.strip === 'left' ? 0 : 2;
+    strip.style.flex = '0 0 ' + d.sw + '%';
+    $('sw').disabled = (L.strip === 'off');
     const nat = natOn();
     $('pw').disabled = $('ph').disabled = (L.pad === 'off');
     $('kw').disabled = $('kh').disabled = nat;
@@ -494,6 +627,7 @@
     const nat = natOn();
     b.toggle('kbhide', !L.kb || nat);
     b.toggle('native', nat);
+    buildKb(false);
     if (!nat && natOpen) natInput.blur();
     b.toggle('nopreview', !S.preview);
     b.toggle('orient-port', orient() === 'port');
@@ -508,7 +642,7 @@
     if (save) {
       try {
         localStorage.setItem('rk-settings', JSON.stringify({
-          speed: S.speed, natural: S.natural, tap: S.tap, preview: S.preview, layouts: S.layouts }));
+          ver: 3, speed: S.speed, natural: S.natural, tap: S.tap, preview: S.preview, layouts: S.layouts }));
       } catch (e) {}
     }
     refreshState(); sendCursor(); sendPv();
@@ -519,7 +653,7 @@
     if (LAYKEYS.includes(k)) lay()[k] = val; else S[k] = val;
     applySettings();
   }));
-  for (const k of ['pw', 'ph', 'kw', 'kh']) $(k).addEventListener('input', e => { dims()[k] = +e.target.value; applySettings(); });
+  for (const k of ['pw', 'ph', 'kw', 'kh', 'sw']) $(k).addEventListener('input', e => { dims()[k] = +e.target.value; applySettings(); });
   $('speed').addEventListener('input', e => { S.speed = +e.target.value; applySettings(); });
   onTap($('resetLay'), () => { const o = orient(); S.layouts[o] = mkLayout(o, null); applySettings(); });
   const onOrient = () => applySettings(false);
@@ -591,6 +725,20 @@
     }
     tp = null;
   }
+  // scroll strip: drag up/down inside it to scroll the tablet precisely (one finger)
+  const strip = $('padStrip'), STRIP_GAIN = 3;
+  let stripY = null;
+  strip.addEventListener('touchstart', e => { e.preventDefault(); wake(); stripY = e.targetTouches[0].clientY; strip.classList.add('act'); }, { passive: false });
+  strip.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (stripY === null) return;
+    const y = e.targetTouches[0].clientY, dy = y - stripY; stripY = y;
+    pushScroll(0, dy * (S.natural ? 1 : -1) * STRIP_GAIN);
+  }, { passive: false });
+  const stripEnd = e => { e.preventDefault(); stripY = null; strip.classList.remove('act'); flush(); };
+  strip.addEventListener('touchend', stripEnd, { passive: false });
+  strip.addEventListener('touchcancel', stripEnd, { passive: false });
+
   surf.addEventListener('touchend', e => padEnd(e, false), { passive: false });
   surf.addEventListener('touchcancel', e => padEnd(e, true), { passive: false });
 

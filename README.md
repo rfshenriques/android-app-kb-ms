@@ -49,15 +49,23 @@ the keyboard popup and you tap Remote Keyboard once. To make it fully one-tap, r
 - Sliders: trackpad width and height, keyboard width and height (all remembered per trackpad position).
 - The top bar shows the live round-trip time to the tablet (for example "Connected · 8 ms"). Spikes turn the dot amber.
 
-## iOS native keyboard
-Settings, **Keyboard type**: Custom or **iOS native**, chosen separately for portrait and landscape
-(portrait defaults to native). In native mode the trackpad fills the screen and a row of extra keys sits at the bottom:
-esc, tab, ctrl, alt, cmd, arrows and a keyboard button. Tap the keyboard button to open the real iOS keyboard; the
-trackpad area shrinks to fit above it and grows back when it closes. Ctrl/alt/cmd work with letters typed on it
-(tap ctrl, then type c). Because the real iOS keyboard is used, its dictation, emoji and accent keys work too.
+## Keyboard types (Settings, Keyboard type, set per orientation)
+- **Desktop**: the PC-style layout with a number row (default in landscape).
+- **iOS style** (default in portrait): looks like the iOS keyboard. Letters, **123** (numbers and punctuation),
+  **#+=** (symbols) and **ABC** switch layers. Shift: tap once for one capital, double-tap for caps lock.
+  Large keys, and the gaps between keys count as part of the nearest key, so taps do not miss.
+  A row with esc, tab, ctrl, alt, cmd and the arrows sits above the letter keys.
+- **iOS native**: the real iOS keyboard (dictation, emoji, accents). The trackpad fills the screen with the same
+  function-key row at the bottom and a keyboard button; the trackpad shrinks above the keyboard when it opens.
+
+## Scroll strip
+Settings, **Scroll strip in the trackpad**: Off, Left or Right, with an adjustable width. Dragging one finger up or
+down inside the strip scrolls the tablet precisely, with no need for two fingers. Natural scrolling applies to it too.
 
 ## Navigation buttons and typing preview (iPhone top bar)
 - Four buttons: **Home**, **Open apps** (recents), **Notifications** and **Quick settings** (Android's control centre).
+  Tap Notifications, Quick settings or Open apps a second time to close it (sends Back). The page cannot see the
+  tablet screen, so it forgets which one is open after 45 seconds or when you press another button.
   They use the mouse (Accessibility) service, so enable it first.
 - The strip under the bar is a live preview of the real text around the cursor in the tablet's focused field,
   so you see edits, autocorrect and cursor moves. Password fields are never sent ("preview hidden").

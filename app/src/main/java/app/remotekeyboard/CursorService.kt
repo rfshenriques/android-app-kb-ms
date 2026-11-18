@@ -123,6 +123,7 @@ class CursorService : AccessibilityService() {
             "recents" -> GLOBAL_ACTION_RECENTS
             "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
             "quick" -> GLOBAL_ACTION_QUICK_SETTINGS
+            "close" -> GLOBAL_ACTION_BACK   // Back collapses the shade / quick settings and leaves recents
             else -> return
         }
         performGlobalAction(a)
