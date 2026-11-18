@@ -33,7 +33,7 @@
     min-height: 34px; min-width: 76px; padding: 0 14px; }
   button { touch-action: manipulation; }
 
-  #main { flex: 1; min-height: 0; display: none; gap: 6px; padding: 6px; }
+  #main { flex: 1; min-height: 0; display: none; gap: 6px; padding: 6px; align-items: flex-end; justify-content: center; }
   body.kb #main { display: flex; }
   body.pos-left #main, body.pos-right #main { flex-direction: row; }
   body.pos-above #main, body.pos-below #main { flex-direction: column; }
@@ -42,9 +42,9 @@
   #kb { order: 1; flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 5px; touch-action: none; }
   body.kbhide #kb { display: none; }
 
-  #pad { display: flex; flex-direction: column; gap: 5px; min-width: 0; min-height: 0; flex: 0 0 34%; }
+  #pad { display: flex; flex-direction: column; gap: 5px; min-width: 0; min-height: 0; flex: 0 1 auto; }
   body.pos-off #pad { display: none; }
-  body.kbhide #pad { flex: 1 1 0 !important; }
+  body.kbhide #pad { flex: 1 1 0 !important; width: auto !important; height: auto !important; align-self: stretch !important; }
   #padSurface { flex: 1; min-height: 0; border-radius: 10px; background: #181b22; border: 1px solid #2a2f3a;
     display: flex; align-items: center; justify-content: center; color: #3a4150; font-size: 13px; touch-action: none; }
   #padSurface.hold { background: #222c44; border-color: var(--accent); color: var(--accent); }
@@ -122,8 +122,12 @@
           </div></div>
         <div class="grp"><label>Keyboard (hide it for a full-screen trackpad)</label>
           <div class="seg" data-key="kb"><button data-v="true">Show</button><button data-v="false">Hide</button></div></div>
-        <div class="grp"><label>Trackpad size: <span id="sizeV"></span></label>
-          <input type="range" id="size" min="20" max="75" step="1"></div>
+        <div class="grp"><label>Trackpad width: <span id="pwV"></span></label>
+          <input type="range" id="pw" min="15" max="100" step="1"></div>
+        <div class="grp"><label>Trackpad height: <span id="phV"></span></label>
+          <input type="range" id="ph" min="20" max="100" step="1"></div>
+        <div class="grp"><label>Keyboard height: <span id="khV"></span></label>
+          <input type="range" id="kh" min="35" max="100" step="1"></div>
         <div class="grp"><label>Pointer speed: <span id="speedV"></span></label>
           <input type="range" id="speed" min="1" max="8" step="0.5"></div>
         <div class="grp"><label>Tap to click</label>
@@ -166,9 +170,23 @@
   const mods = { shift: false, caps: false, ctrl: false, alt: false, meta: false };
   const modEls = [];
 
-  const DEFAULTS = { pad: 'right', kb: true, size: 34, speed: 2.5, natural: true, tap: true };
+  // sizes are % of the keyboard area and are remembered per trackpad position
+  const SIZES = {
+    right: { pw: 24, ph: 72, kh: 72 }, left: { pw: 24, ph: 72, kh: 72 },
+    above: { pw: 60, ph: 34, kh: 66 },  below: { pw: 60, ph: 34, kh: 66 },
+    off:   { pw: 24, ph: 100, kh: 85 },
+  };
+  const DEFAULTS = { pad: 'right', kb: true, speed: 2.5, natural: true, tap: true };
   let S = Object.assign({}, DEFAULTS);
-  try { Object.assign(S, JSON.parse(localStorage.getItem('rk-settings') || '{}')); } catch (e) {}
+  let savedSizes = {};
+  try {
+    const o = JSON.parse(localStorage.getItem('rk-settings') || '{}');
+    savedSizes = o.d || {}; delete o.d; delete o.size;
+    Object.assign(S, o);
+  } catch (e) {}
+  S.d = {};
+  for (const k in SIZES) S.d[k] = Object.assign({}, SIZES[k], savedSizes[k] || {});
+  const dims = () => S.d[S.pad];
   let mouseOk = null;     // does the tablet have the mouse (accessibility) service running?
   const SCROLL_GAIN = 2.5;
 
@@ -337,19 +355,39 @@
   }
 
   // ---------- settings ----------
+  function layoutSizes() {
+    const d = dims(), pad = $('pad'), kb = $('kb');
+    const row = S.pad === 'left' || S.pad === 'right';
+    for (const k of ['pw', 'ph', 'kh']) { $(k).value = d[k]; $(k + 'V').textContent = d[k] + '%'; }
+    $('pw').disabled = $('ph').disabled = (S.pad === 'off');
+    if (S.pad === 'off' || !S.kb) {                       // keyboard only / trackpad only
+      pad.style.width = pad.style.height = pad.style.alignSelf = '';
+      kb.style.flex = '1 1 0'; kb.style.alignSelf = 'flex-end';
+      kb.style.height = S.kb ? d.kh + '%' : ''; kb.style.width = '';
+      return;
+    }
+    pad.style.width = d.pw + '%'; pad.style.height = d.ph + '%';
+    if (row) {
+      pad.style.alignSelf = 'flex-end';
+      kb.style.flex = '1 1 0'; kb.style.alignSelf = 'flex-end'; kb.style.width = '';
+    } else {
+      pad.style.alignSelf = 'center';
+      kb.style.flex = '0 1 auto'; kb.style.alignSelf = 'stretch'; kb.style.width = '';
+    }
+    kb.style.height = d.kh + '%';
+  }
   function applySettings(save = true) {
     if (S.pad === 'off' && !S.kb) S.kb = true;        // never hide everything
     const b = document.body.classList;
     ['off', 'left', 'right', 'above', 'below'].forEach(p => b.toggle('pos-' + p, S.pad === p));
     b.toggle('kbhide', !S.kb);
-    $('pad').style.flex = '0 0 ' + S.size + '%';
-    $('size').value = S.size; $('sizeV').textContent = S.size + '%';
+    layoutSizes();
     $('speed').value = S.speed; $('speedV').textContent = S.speed;
     document.querySelectorAll('.seg').forEach(seg => {
       seg.querySelectorAll('button').forEach(btn =>
         btn.classList.toggle('sel', String(S[seg.dataset.key]) === btn.dataset.v));
     });
-    if (save) { try { localStorage.setItem('rk-settings', JSON.stringify(S)); } catch (e) {} }
+    if (save) { try { localStorage.setItem('rk-settings', JSON.stringify(Object.assign({}, S))); } catch (e) {} }
     refreshState(); sendCursor();
   }
   document.querySelectorAll('.seg button').forEach(btn => onTap(btn, () => {
@@ -357,7 +395,7 @@
     S[k] = (v === 'true') ? true : (v === 'false') ? false : v;
     applySettings();
   }));
-  $('size').addEventListener('input', e => { S.size = +e.target.value; applySettings(); });
+  for (const k of ['pw', 'ph', 'kh']) $(k).addEventListener('input', e => { dims()[k] = +e.target.value; applySettings(); });
   $('speed').addEventListener('input', e => { S.speed = +e.target.value; applySettings(); });
   onTap($('setBtn'), () => $('settings').classList.add('open'));
   onTap($('setDone'), () => $('settings').classList.remove('open'));
