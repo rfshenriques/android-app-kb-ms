@@ -11,20 +11,22 @@ iPhone Safari PWA  --ws://tablet-ip:8080-->  Android IME (HTTP + WebSocket serve
 1. Open this folder in Android Studio (Koala or newer) and let Gradle sync, or run `./gradlew assembleDebug`.
 2. Install `app/build/outputs/apk/debug/app-debug.apk` on the tablet.
 
-## Set up the tablet
-1. Open **Remote Keyboard**, tap **1. Enable keyboard**, switch on "Remote Keyboard (iPhone)".
-2. Tap any text field, then **2. Choose keyboard** and pick Remote Keyboard.
-   While it is active the tablet shows a small bar with the address, PIN and a "Switch keyboard" button
-   to get your normal keyboard back.
+## Set up the tablet (guided)
+Open the **Remote Keyboard** app. It shows each step with a check mark when it is done:
+1. **Enable the keyboard**: switch on "Remote Keyboard (iPhone)" in the keyboard list.
+2. **Choose it as your active keyboard**: tap Choose and pick Remote Keyboard in the popup.
+   It must stay selected; the connection only runs while it is the active keyboard.
+3. **Enable the mouse** (optional, for the trackpad): turn on "Remote Keyboard mouse" in Accessibility.
+   Android 13+ sideloaded: App info, menu (three dots), **Allow restricted settings**, if it is greyed out.
+4. **Connect your iPhone**: the app shows the address and PIN, and "iPhone connected" when it works.
 
-## Enable the mouse (trackpad)
-Android has no non-root API for a real pointer, so the trackpad uses an Accessibility service that draws
-a cursor overlay and performs taps, drags and scrolls at the cursor.
-1. In the app tap **3. Enable mouse (accessibility)** and turn on "Remote Keyboard mouse".
-2. Android 13+ (sideloaded app): if it is greyed out, go to Settings > Apps > Remote Keyboard > menu (three dots) >
-   **Allow restricted settings**, then try again.
-3. The tablet bar and app screen show "mouse on" once it is running.
-The service does not read screen content. The keyboard service must stay selected, since it hosts the server.
+### Widget
+Long-press the home screen, Widgets, **Remote Keyboard**. It shows the state, PIN and address and has one
+button for the next step: Enable keyboard, Activate, then Switch back to my keyboard.
+Android only lets an app switch keyboards silently with a special permission. Without it, the button opens
+the keyboard popup and you tap Remote Keyboard once. To make it fully one-tap, run once from a PC with USB debugging:
+`adb shell pm grant app.remotekeyboard android.permission.WRITE_SECURE_SETTINGS`
+(the app's step 5 has a "Copy command" button). The widget then also restores your previous keyboard.
 
 ## Set up the iPhone (no Mac needed)
 1. Put the iPhone on the same Wi-Fi as the tablet, or on the tablet's hotspot.
