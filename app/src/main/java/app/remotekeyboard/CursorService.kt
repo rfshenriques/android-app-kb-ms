@@ -82,6 +82,7 @@ class CursorService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        releaseAll()
         hideCursor()
         instance = null
         Setup.refreshWidgets(this)
@@ -89,6 +90,7 @@ class CursorService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        releaseAll()
         hideCursor()
         instance = null
         super.onDestroy()
@@ -96,7 +98,30 @@ class CursorService : AccessibilityService() {
 
     // ---- public API (main thread) ---------------------------------------------
 
-    fun setCursorVisible(on: Boolean) = if (on) showCursor() else hideCursor()
+    fun setCursorVisible(on: Boolean) {
+        if (on) showCursor() else { releaseAll(); hideCursor() }
+    }
+
+    /** Lift the virtual finger. Called when the iPhone goes away, so a touch can never stay stuck down. */
+    fun releaseAll() {
+        main.removeCallbacks(endScroll)
+        main.removeCallbacks(watchdog)
+        if (finger.active) finger.end()
+        mode = Mode.NONE
+    }
+
+    /** Heartbeat from the phone: while a finger is down, keep waiting for it. */
+    fun touchAlive() {
+        main.removeCallbacks(watchdog)
+        if (finger.active) main.postDelayed(watchdog, 6000)
+    }
+
+    private val watchdog = Runnable {
+        if (finger.active) {
+            finger.end()
+            mode = Mode.NONE
+        }
+    }
 
     fun moveBy(dx: Float, dy: Float) {
         updateScreen()
@@ -136,6 +161,7 @@ class CursorService : AccessibilityService() {
     fun down() {
         if (finger.active) return
         mode = Mode.DRAG
+        touchAlive()
         finger.begin(x, y)
     }
 
@@ -143,6 +169,7 @@ class CursorService : AccessibilityService() {
     fun hold() {
         if (finger.active) return
         mode = Mode.DRAG
+        touchAlive()
         finger.begin(x, y, 650)
     }
 
@@ -158,6 +185,7 @@ class CursorService : AccessibilityService() {
             if (finger.active) return
             mode = Mode.SCROLL
             sx = x; sy = y
+            touchAlive()
             finger.begin(sx, sy)
         }
         val m = 12f * density

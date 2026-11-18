@@ -89,6 +89,7 @@ class KeyboardService : InputMethodService() {
         running = false
         clients.set(0)
         peers.clear()
+        CursorService.instance?.releaseAll()
         sender.shutdownNow()
         try { wifiLock?.release() } catch (e: Exception) {}
         wifiLock = null
@@ -294,6 +295,7 @@ class KeyboardService : InputMethodService() {
 
         override fun onClose(code: NanoWSD.WebSocketFrame.CloseCode?, reason: String?, initiatedByRemote: Boolean) {
             peers.remove(this)
+            if (peers.isEmpty()) main.post { CursorService.instance?.releaseAll() }
             if (authed) {
                 authed = false
                 if (clients.decrementAndGet() <= 0) main.post { CursorService.instance?.setCursorVisible(false) }
@@ -304,7 +306,7 @@ class KeyboardService : InputMethodService() {
         override fun onMessage(message: NanoWSD.WebSocketFrame) {
             val msg = try { JSONObject(message.textPayload) } catch (e: Exception) { return }
             when (msg.optString("t")) {
-                "ping" -> reply("""{"t":"pong","ts":${msg.optLong("ts")}}""")
+                "ping" -> { main.post { CursorService.instance?.touchAlive() }; reply("""{"t":"pong","ts":${msg.optLong("ts")}}""") }
                 "pv" -> if (authed) {
                     wantsPreview = msg.optBoolean("on", true)
                     if (wantsPreview) main.post { schedulePreview() }
