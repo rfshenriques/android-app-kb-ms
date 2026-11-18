@@ -39,7 +39,6 @@ class CursorService : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
     private var wm: WindowManager? = null
     private var cursor: CursorView? = null
-    private var lp: WindowManager.LayoutParams? = null
     private var x = 0f          // logical cursor position (used for clicks and gestures)
     private var y = 0f
     private var vx = 0f         // displayed position, eases toward x/y once per frame
@@ -176,6 +175,9 @@ class CursorService : AccessibilityService() {
     }
 
     // ---- cursor overlay -------------------------------------------------------
+    // One full-screen, untouchable overlay that draws the arrow itself. Moving the cursor only
+    // invalidates a small rectangle, instead of re-laying-out a window through the system
+    // server every frame (which made the pointer stutter).
 
     private fun updateScreen() {
         val w = wm ?: return
@@ -193,19 +195,23 @@ class CursorService : AccessibilityService() {
         if (cursor != null) return
         val v = CursorView(this)
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START }
-        lp = params
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            if (Build.VERSION.SDK_INT >= 28) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
         cursor = v
         vx = x; vy = y
-        placeCursor()
+        v.moveTo(vx, vy)
         try { wm?.addView(v, params) } catch (e: Exception) { cursor = null }
     }
 
@@ -217,11 +223,7 @@ class CursorService : AccessibilityService() {
     }
 
     private fun placeCursor() {
-        val v = cursor ?: return
-        val p = lp ?: return
-        p.x = (vx - density).toInt()
-        p.y = (vy - density).toInt()
-        try { wm?.updateViewLayout(v, p) } catch (e: Exception) {}
+        cursor?.moveTo(vx, vy)
     }
 
     private class CursorView(ctx: Context) : View(ctx) {
@@ -234,8 +236,31 @@ class CursorService : AccessibilityService() {
             moveTo(1 * d, 1 * d); lineTo(1 * d, 19 * d); lineTo(5.5f * d, 14.8f * d); lineTo(9 * d, 22 * d)
             lineTo(12 * d, 20.6f * d); lineTo(8.6f * d, 13.6f * d); lineTo(14.5f * d, 13.2f * d); close()
         }
-        override fun onMeasure(w: Int, h: Int) = setMeasuredDimension((20 * d).toInt(), (28 * d).toInt())
-        override fun onDraw(c: Canvas) { c.drawPath(arrow, fill); c.drawPath(arrow, edge) }
+        private var cx = 0f   // cursor tip in screen coordinates
+        private var cy = 0f
+        private val loc = IntArray(2)
+
+        private fun dirty() {
+            getLocationOnScreen(loc)
+            val l = (cx - loc[0] - 4 * d).toInt()
+            val t = (cy - loc[1] - 4 * d).toInt()
+            invalidate(l, t, l + (26 * d).toInt(), t + (34 * d).toInt())
+        }
+
+        fun moveTo(x: Float, y: Float) {
+            dirty()          // old position
+            cx = x; cy = y
+            dirty()          // new position
+        }
+
+        override fun onDraw(c: Canvas) {
+            getLocationOnScreen(loc)
+            c.save()
+            c.translate(cx - loc[0] - d, cy - loc[1] - d)
+            c.drawPath(arrow, fill)
+            c.drawPath(arrow, edge)
+            c.restore()
+        }
     }
 
     // ---- one continuous touch stroke -------------------------------------------

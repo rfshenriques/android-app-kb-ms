@@ -42,6 +42,13 @@ the keyboard popup and you tap Remote Keyboard once. To make it fully one-tap, r
   (Android's "right click": context menus), keep moving after the hold to drag, two fingers scroll,
   two-finger tap = Back.
 
+## Layouts, portrait and sizes
+- Works in portrait and landscape. Each orientation has its **own saved layout** (trackpad position, keyboard on/off,
+  sizes). Open Settings in the orientation you want to change; the sheet says which one you are editing.
+  "Reset this layout to defaults" restores just that orientation.
+- Sliders: trackpad width and height, keyboard width and height (all remembered per trackpad position).
+- The top bar shows the live round-trip time to the tablet (for example "Connected · 8 ms"). Spikes turn the dot amber.
+
 ## Navigation buttons and typing preview (iPhone top bar)
 - Four buttons: **Home**, **Open apps** (recents), **Notifications** and **Quick settings** (Android's control centre).
   They use the mouse (Accessibility) service, so enable it first.
@@ -50,6 +57,8 @@ the keyboard popup and you tap Remote Keyboard once. To make it fully one-tap, r
   Turn it off in Settings, Typing preview.
 
 ## Notes
+- Latency: the tablet disables TCP packet batching (Nagle) and holds a low-latency Wi-Fi lock while the keyboard is active;
+  the pointer is drawn on one fixed full-screen overlay instead of moving a window every frame.
 - Needs a focused text field on the tablet. It cannot type at lock-screen PIN prompts.
 - Shift, Ctrl, Alt and Cmd are one-shot (tap, then press a key). Caps is a toggle.
   Backspace, arrows and space repeat when held. Ctrl+C/V/A and similar work in most apps.

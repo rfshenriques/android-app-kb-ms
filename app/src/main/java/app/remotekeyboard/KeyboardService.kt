@@ -1,6 +1,9 @@
 package app.remotekeyboard
 
+import android.content.Context
 import android.inputmethodservice.InputMethodService
+import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -19,6 +22,8 @@ import fi.iki.elonen.NanoWSD
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.net.ServerSocket
+import java.net.Socket
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
@@ -37,6 +42,16 @@ class KeyboardService : InputMethodService() {
     private val peers = CopyOnWriteArraySet<Client>()          // authenticated iPhones
     private val sender = Executors.newSingleThreadExecutor()    // socket writes stay off the main thread
     private var previewQueued = false
+    private var wifiLock: WifiManager.WifiLock? = null
+
+    /** Small packets (key presses, pointer moves) must not wait to be bundled: disable Nagle. */
+    private object NoDelayFactory : NanoHTTPD.ServerSocketFactory {
+        override fun create(): ServerSocket = object : ServerSocket() {
+            override fun accept(): Socket = super.accept().also {
+                try { it.tcpNoDelay = true; it.keepAlive = true } catch (e: Exception) {}
+            }
+        }
+    }
 
     companion object {
         @Volatile var running = false
@@ -50,11 +65,21 @@ class KeyboardService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         try {
-            server = KbServer(PORT).also { it.start(0, true) } // 0 = no socket read timeout
+            server = KbServer(PORT).also {
+                it.setServerSocketFactory(NoDelayFactory)
+                it.start(0, true) // 0 = no socket read timeout
+            }
         } catch (e: IOException) {
             server = null
         }
         running = server != null
+        // keep the Wi-Fi radio out of power-save so packets are not held back
+        try {
+            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val mode = if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            else WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            wifiLock = wifi.createWifiLock(mode, "remotekeyboard").apply { setReferenceCounted(false); acquire() }
+        } catch (e: Exception) { wifiLock = null }
         refreshStatus()
     }
 
@@ -65,6 +90,8 @@ class KeyboardService : InputMethodService() {
         clients.set(0)
         peers.clear()
         sender.shutdownNow()
+        try { wifiLock?.release() } catch (e: Exception) {}
+        wifiLock = null
         Setup.refreshWidgets(this)
         super.onDestroy()
     }
@@ -148,11 +175,11 @@ class KeyboardService : InputMethodService() {
     private fun schedulePreview() {
         if (previewQueued || peers.isEmpty()) return
         previewQueued = true
-        main.postDelayed({ previewQueued = false; sendPreview() }, 30)
+        main.postDelayed({ previewQueued = false; sendPreview() }, 80)
     }
 
     private fun sendPreview() {
-        if (peers.isEmpty()) return
+        if (peers.none { it.wantsPreview }) return   // nobody wants it: skip the (blocking) reads
         val ic = currentInputConnection
         val ei = currentInputEditorInfo
         val json = JSONObject().put("t", "preview")
@@ -174,7 +201,7 @@ class KeyboardService : InputMethodService() {
             }
         }
         val text = json.toString()
-        try { sender.execute { peers.forEach { it.push(text) } } } catch (e: Exception) { /* shutting down */ }
+        try { sender.execute { peers.forEach { if (it.wantsPreview) it.push(text) } } } catch (e: Exception) { /* shutting down */ }
     }
 
     /** Trackpad messages go to the accessibility service. Returns true if the message was a mouse one. */
@@ -261,6 +288,7 @@ class KeyboardService : InputMethodService() {
 
     private inner class Client(handshake: NanoHTTPD.IHTTPSession) : NanoWSD.WebSocket(handshake) {
         @Volatile private var authed = false
+        @Volatile var wantsPreview = true
 
         override fun onOpen() {}
 
@@ -276,7 +304,11 @@ class KeyboardService : InputMethodService() {
         override fun onMessage(message: NanoWSD.WebSocketFrame) {
             val msg = try { JSONObject(message.textPayload) } catch (e: Exception) { return }
             when (msg.optString("t")) {
-                "ping" -> reply("""{"t":"pong"}""")
+                "ping" -> reply("""{"t":"pong","ts":${msg.optLong("ts")}}""")
+                "pv" -> if (authed) {
+                    wantsPreview = msg.optBoolean("on", true)
+                    if (wantsPreview) main.post { schedulePreview() }
+                }
                 "auth" -> authenticate(msg.optString("pin"))
                 "cursor" -> if (authed) {
                     reply("""{"t":"mouse","ok":${CursorService.instance != null}}""")

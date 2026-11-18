@@ -63,9 +63,9 @@
   #padSurface.hold { background: #222c44; border-color: var(--accent); color: var(--accent); }
   .row { flex: 1; display: flex; gap: 5px; min-height: 0; }
   .key { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center;
-    background: var(--key); border-radius: 7px; font-size: clamp(14px, 3.6vh, 22px); font-weight: 500;
+    background: var(--key); border-radius: 7px; font-size: clamp(12px, min(3.6vh, 4.8vw), 22px); font-weight: 500;
     box-shadow: 0 1px 0 rgba(0,0,0,.5); touch-action: none; }
-  .key.fn { background: var(--key-fn); font-size: clamp(11px, 2.7vh, 16px); color: #c6cad6; }
+  .key.fn { background: var(--key-fn); font-size: clamp(10px, min(2.7vh, 3.4vw), 16px); color: #c6cad6; }
   .key.down { background: var(--key-down); }
   .key.on { background: var(--accent); color: #fff; }
 
@@ -95,10 +95,17 @@
   .grp input[type=range] { width: 100%; }
   @media (orientation: portrait) { .grid { grid-template-columns: 1fr; } }
 
-  #rotate { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: none;
-    align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: var(--muted); }
-  #rotate .ic { font-size: 48px; }
-  @media (orientation: portrait) { body.kb #rotate { display: flex; } }
+  .rst { background: #262b36; color: var(--text); border: 0; border-radius: 8px; padding: 9px 14px; font-size: 13px; }
+  #layName { color: var(--accent); font-size: 12px; margin: -2px 0 8px; }
+  @media (orientation: portrait) {
+    #bar { gap: 6px; padding: 0 8px; }
+    #bar button { min-width: 0; padding: 0 10px; font-size: 13px; }
+    #nav { gap: 4px; }
+    #nav button { width: 36px; padding: 0; }
+    #state { display: none; }
+    #kb { gap: 4px; }
+    .row { gap: 3px; }
+  }
 </style>
 </head>
 <body class="pin">
@@ -135,6 +142,7 @@
   <div id="settings">
     <div id="panel">
       <h2>Settings <button id="setDone">Done</button></h2>
+      <div id="layName"></div>
       <div class="grid">
         <div class="grp wide"><label>Trackpad position</label>
           <div class="seg" data-key="pad">
@@ -147,12 +155,15 @@
           <input type="range" id="pw" min="15" max="100" step="1"></div>
         <div class="grp"><label>Trackpad height: <span id="phV"></span></label>
           <input type="range" id="ph" min="20" max="100" step="1"></div>
+        <div class="grp"><label>Keyboard width: <span id="kwV"></span></label>
+          <input type="range" id="kw" min="30" max="100" step="1"></div>
         <div class="grp"><label>Keyboard height: <span id="khV"></span></label>
           <input type="range" id="kh" min="35" max="100" step="1"></div>
         <div class="grp"><label>Pointer speed: <span id="speedV"></span></label>
           <input type="range" id="speed" min="1" max="8" step="0.5"></div>
         <div class="grp"><label>Tap to click</label>
           <div class="seg" data-key="tap"><button data-v="true">On</button><button data-v="false">Off</button></div></div>
+        <div class="grp wide"><button class="rst" id="resetLay">Reset this layout to defaults</button></div>
         <div class="grp"><label>Typing preview</label>
           <div class="seg" data-key="preview"><button data-v="true">On</button><button data-v="false">Off</button></div></div>
         <div class="grp"><label>Natural scrolling</label>
@@ -165,7 +176,6 @@
     </div>
   </div>
 
-  <div id="rotate"><div class="ic">&#x21BB;</div><div>Rotate to landscape</div></div>
 
 <script>
 (() => {
@@ -193,23 +203,40 @@
   const mods = { shift: false, caps: false, ctrl: false, alt: false, meta: false };
   const modEls = [];
 
+  // ---------- layouts: a separate saved config for landscape and portrait ----------
   // sizes are % of the keyboard area and are remembered per trackpad position
-  const SIZES = {
-    right: { pw: 24, ph: 72, kh: 72 }, left: { pw: 24, ph: 72, kh: 72 },
-    above: { pw: 60, ph: 34, kh: 66 },  below: { pw: 60, ph: 34, kh: 66 },
-    off:   { pw: 24, ph: 100, kh: 85 },
+  const SIZE_DEF = {
+    land: {
+      right: { pw: 24, ph: 72, kw: 100, kh: 72 }, left: { pw: 24, ph: 72, kw: 100, kh: 72 },
+      above: { pw: 60, ph: 34, kw: 100, kh: 66 }, below: { pw: 60, ph: 34, kw: 100, kh: 66 },
+      off:   { pw: 24, ph: 72, kw: 100, kh: 85 },
+    },
+    port: {
+      above: { pw: 100, ph: 36, kw: 100, kh: 60 }, below: { pw: 100, ph: 36, kw: 100, kh: 60 },
+      right: { pw: 30, ph: 60, kw: 100, kh: 60 },  left:  { pw: 30, ph: 60, kw: 100, kh: 60 },
+      off:   { pw: 24, ph: 72, kw: 100, kh: 56 },
+    },
   };
-  const DEFAULTS = { pad: 'right', kb: true, speed: 2.5, natural: true, tap: true, preview: true };
-  let S = Object.assign({}, DEFAULTS);
-  let savedSizes = {};
+  const PAD_DEF = { land: 'right', port: 'above' };
+  const mkLayout = (o, saved) => {
+    const L = { pad: (saved && saved.pad) || PAD_DEF[o], kb: !(saved && saved.kb === false), d: {} };
+    for (const p in SIZE_DEF[o]) L.d[p] = Object.assign({}, SIZE_DEF[o][p], (saved && saved.d && saved.d[p]) || {});
+    return L;
+  };
+  const GLOBALS = { speed: 2.5, natural: true, tap: true, preview: true };
+  let S = Object.assign({}, GLOBALS);
+  let savedLayouts = {};
   try {
     const o = JSON.parse(localStorage.getItem('rk-settings') || '{}');
-    savedSizes = o.d || {}; delete o.d; delete o.size;
-    Object.assign(S, o);
+    for (const k in GLOBALS) if (k in o) S[k] = o[k];
+    savedLayouts = o.layouts || (o.pad ? { land: { pad: o.pad, kb: o.kb, d: o.d } } : {});   // older single-layout format
   } catch (e) {}
-  S.d = {};
-  for (const k in SIZES) S.d[k] = Object.assign({}, SIZES[k], savedSizes[k] || {});
-  const dims = () => S.d[S.pad];
+  S.layouts = { land: mkLayout('land', savedLayouts.land), port: mkLayout('port', savedLayouts.port) };
+  const mq = window.matchMedia('(orientation: portrait)');
+  const orient = () => (mq.matches ? 'port' : 'land');
+  const lay = () => S.layouts[orient()];
+  const dims = () => lay().d[lay().pad];
+  let rtt = 0;            // smoothed round-trip time to the tablet, ms
   let mouseOk = null;     // does the tablet have the mouse (accessibility) service running?
   const SCROLL_GAIN = 2.5;
 
@@ -229,10 +256,12 @@
   const showKb = () => setScreen('kb');
   function refreshState() {
     if (!authed) return;
-    if (S.pad !== 'off' && mouseOk === false) setState('wait', 'Connected. Mouse is off: enable it on the tablet');
-    else setState('ok', 'Connected');
+    const ms = rtt ? ' \u00B7 ' + Math.round(rtt) + ' ms' : '';
+    if (lay().pad !== 'off' && mouseOk === false) setState('wait', 'Connected. Mouse is off: enable it on the tablet');
+    else setState(rtt > 150 ? 'wait' : 'ok', 'Connected' + ms);
   }
-  const sendCursor = () => { if (authed) send({ t: 'cursor', on: S.pad !== 'off' }); };
+  const sendCursor = () => { if (authed) send({ t: 'cursor', on: lay().pad !== 'off' }); };
+  const sendPv = () => { if (authed) send({ t: 'pv', on: S.preview }); };
 
   function connect() {
     if (!pin || pinBad) return;
@@ -246,14 +275,17 @@
     mine.onopen = () => mine.send(JSON.stringify({ t: 'auth', pin }));
     mine.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-      if (m.t === 'pong') { lastPong = Date.now(); }
+      if (m.t === 'pong') {
+        lastPong = Date.now();
+        if (m.ts) { const r = Date.now() - m.ts; rtt = rtt ? rtt * 0.7 + r * 0.3 : r; refreshState(); }
+      }
       else if (m.t === 'mouse') { mouseOk = m.ok; refreshState(); }
       else if (m.t === 'preview') { renderPreview(m); }
       else if (m.t === 'auth') {
         if (m.ok) {
           authed = true; lastPong = Date.now();
           try { localStorage.setItem('rk-pin', pin); } catch (e) {}
-          showKb(); refreshState(); sendCursor();
+          rtt = 0; showKb(); refreshState(); sendCursor(); sendPv();
         } else {
           authed = false; pinBad = true; mine.close();
           showPin(m.reason === 'locked' ? 'Too many attempts. Wait a minute and try again.' : 'Wrong PIN.');
@@ -278,8 +310,8 @@
   setInterval(() => {
     if (!ws || ws.readyState !== 1 || !authed) return;
     if (Date.now() - lastPong > 20000) { ws.close(); return; } // stale socket
-    ws.send('{"t":"ping"}');
-  }, 8000);
+    ws.send('{"t":"ping","ts":' + Date.now() + '}');
+  }, 2000);
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') connect();
@@ -401,49 +433,57 @@
   }
 
   // ---------- settings ----------
+  const LAYKEYS = ['pad', 'kb'];                       // per-orientation; everything else is global
+  const getKey = k => (LAYKEYS.includes(k) ? lay()[k] : S[k]);
+
   function layoutSizes() {
-    const d = dims(), pad = $('pad'), kb = $('kb');
-    const row = S.pad === 'left' || S.pad === 'right';
-    for (const k of ['pw', 'ph', 'kh']) { $(k).value = d[k]; $(k + 'V').textContent = d[k] + '%'; }
-    $('pw').disabled = $('ph').disabled = (S.pad === 'off');
-    if (S.pad === 'off' || !S.kb) {                       // keyboard only / trackpad only
-      pad.style.width = pad.style.height = pad.style.alignSelf = '';
-      kb.style.flex = '1 1 0'; kb.style.alignSelf = 'flex-end';
-      kb.style.height = S.kb ? d.kh + '%' : ''; kb.style.width = '';
-      return;
-    }
-    pad.style.width = d.pw + '%'; pad.style.height = d.ph + '%';
-    if (row) {
-      pad.style.alignSelf = 'flex-end';
-      kb.style.flex = '1 1 0'; kb.style.alignSelf = 'flex-end'; kb.style.width = '';
-    } else {
-      pad.style.alignSelf = 'center';
-      kb.style.flex = '0 1 auto'; kb.style.alignSelf = 'stretch'; kb.style.width = '';
-    }
-    kb.style.height = d.kh + '%';
+    const L = lay(), d = dims(), pad = $('pad'), kb = $('kb');
+    const row = L.pad === 'left' || L.pad === 'right';
+    for (const k of ['pw', 'ph', 'kw', 'kh']) { $(k).value = d[k]; $(k + 'V').textContent = d[k] + '%'; }
+    $('pw').disabled = $('ph').disabled = (L.pad === 'off');
+    const full = d.kw >= 100;
+    kb.style.height = L.kb ? d.kh + '%' : '';
+    kb.style.alignSelf = (row || L.pad === 'off') ? 'flex-end' : 'center';
+    if (!L.kb || (row && full)) { kb.style.flex = '1 1 0'; kb.style.width = ''; }
+    else { kb.style.flex = '0 1 auto'; kb.style.width = d.kw + '%'; }
+    if (L.pad === 'off' || !L.kb) { pad.style.width = pad.style.height = pad.style.alignSelf = ''; }
+    else { pad.style.width = d.pw + '%'; pad.style.height = d.ph + '%'; pad.style.alignSelf = row ? 'flex-end' : 'center'; }
   }
   function applySettings(save = true) {
-    if (S.pad === 'off' && !S.kb) S.kb = true;        // never hide everything
+    const L = lay();
+    if (L.pad === 'off' && !L.kb) L.kb = true;          // never hide everything
     const b = document.body.classList;
-    ['off', 'left', 'right', 'above', 'below'].forEach(p => b.toggle('pos-' + p, S.pad === p));
-    b.toggle('kbhide', !S.kb);
+    ['off', 'left', 'right', 'above', 'below'].forEach(p => b.toggle('pos-' + p, L.pad === p));
+    b.toggle('kbhide', !L.kb);
     b.toggle('nopreview', !S.preview);
+    b.toggle('orient-port', orient() === 'port');
+    $('layName').textContent = 'Editing the ' + (orient() === 'port' ? 'portrait' : 'landscape') +
+      ' layout. Rotate the phone to edit the other one.';
     layoutSizes();
     $('speed').value = S.speed; $('speedV').textContent = S.speed;
     document.querySelectorAll('.seg').forEach(seg => {
       seg.querySelectorAll('button').forEach(btn =>
-        btn.classList.toggle('sel', String(S[seg.dataset.key]) === btn.dataset.v));
+        btn.classList.toggle('sel', String(getKey(seg.dataset.key)) === btn.dataset.v));
     });
-    if (save) { try { localStorage.setItem('rk-settings', JSON.stringify(Object.assign({}, S))); } catch (e) {} }
-    refreshState(); sendCursor();
+    if (save) {
+      try {
+        localStorage.setItem('rk-settings', JSON.stringify({
+          speed: S.speed, natural: S.natural, tap: S.tap, preview: S.preview, layouts: S.layouts }));
+      } catch (e) {}
+    }
+    refreshState(); sendCursor(); sendPv();
   }
   document.querySelectorAll('.seg button').forEach(btn => onTap(btn, () => {
     const k = btn.parentElement.dataset.key, v = btn.dataset.v;
-    S[k] = (v === 'true') ? true : (v === 'false') ? false : v;
+    const val = (v === 'true') ? true : (v === 'false') ? false : v;
+    if (LAYKEYS.includes(k)) lay()[k] = val; else S[k] = val;
     applySettings();
   }));
-  for (const k of ['pw', 'ph', 'kh']) $(k).addEventListener('input', e => { dims()[k] = +e.target.value; applySettings(); });
+  for (const k of ['pw', 'ph', 'kw', 'kh']) $(k).addEventListener('input', e => { dims()[k] = +e.target.value; applySettings(); });
   $('speed').addEventListener('input', e => { S.speed = +e.target.value; applySettings(); });
+  onTap($('resetLay'), () => { const o = orient(); S.layouts[o] = mkLayout(o, null); applySettings(); });
+  const onOrient = () => applySettings(false);
+  if (mq.addEventListener) mq.addEventListener('change', onOrient); else mq.addListener(onOrient);
   onTap($('setBtn'), () => $('settings').classList.add('open'));
   onTap($('setDone'), () => $('settings').classList.remove('open'));
   $('settings').addEventListener('click', e => { if (e.target.id === 'settings') $('settings').classList.remove('open'); });
